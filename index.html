@@ -49,6 +49,13 @@
         };
 
         // --- Configuration Handling ---
+        
+        // ** IMPORTANT **
+        // Because your Azure app is "Single Tenant" (locked to your org), 
+        // you MUST provide your Directory (Tenant) ID below.
+        // Go to Azure Portal -> App Registrations -> ITech Fund Tracker -> Overview -> Directory (tenant) ID
+        const azureTenantId = "0b13aea2-8f34-4af4-bd7a-d950720cd00a"; 
+
         const getFirebaseConfig = () => {
             if (typeof __firebase_config !== 'undefined') {
                 return JSON.parse(__firebase_config);
@@ -97,7 +104,6 @@
                 });
 
                 // 2. Safety Timeout (Fix for "Blank Page" on unauthorized domains)
-                // If Firebase is blocked by the domain setting, it might hang. We force the UI to show after 2.5 seconds.
                 const safetyTimer = setTimeout(() => {
                     if (mounted) {
                         setLoading((prev) => {
@@ -120,24 +126,33 @@
             // Handle Microsoft Login (Azure SSO)
             const handleLogin = async () => {
                 try {
+                    // Check if Tenant ID is set
+                    if (azureTenantId === "PASTE_YOUR_TENANT_ID_HERE") {
+                        setErrorMsg("Configuration Error: Please open the HTML file and paste your Azure Directory (Tenant) ID into the 'azureTenantId' variable.");
+                        return;
+                    }
+
                     setLoading(true);
                     const provider = new firebase.auth.OAuthProvider('microsoft.com');
                     
-                    // You can add scopes if needed (e.g., mail.read), but defaults are usually fine for ID
+                    // FIXED: Use the specific Tenant ID instead of 'common'
                     provider.setCustomParameters({
-                        // prompt: 'consent', // Force consent prompt if needed
-                        tenant: 'common' // Or your specific tenant ID if you are restricting to one org
+                        tenant: azureTenantId 
                     });
 
                     await auth.signInWithPopup(provider);
                 } catch (error) {
                     console.error("Login failed:", error);
                     let userMsg = "Login Failed: " + error.message;
+                    
                     if (error.code === 'auth/operation-not-allowed') {
                         userMsg = "Microsoft Login not enabled. Please go to Firebase Console -> Authentication -> Sign-in method and enable 'Microsoft'.";
                     } else if (error.code === 'auth/unauthorized-domain') {
-                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain (e.g., 127.0.0.1 or your github.io).";
+                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain.";
+                    } else if (error.message.includes('AADSTS50194')) {
+                        userMsg = "Tenant Error: The app is Single Tenant but the code tried to use a Common endpoint. Please ensure 'azureTenantId' is set correctly in the code.";
                     }
+                    
                     setErrorMsg(userMsg);
                     setLoading(false);
                 }
