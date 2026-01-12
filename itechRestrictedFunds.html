@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ITech Fund Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- FIREBASE COMPATIBILITY SCRIPTS -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- ICONS (Inline SVGs) ---
+        const Icons = {
+            TrendingUp: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>,
+            TrendingDown: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>,
+            Wallet: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"></path><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"></path><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"></path></svg>,
+            Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>,
+            Store: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"></path></svg>,
+            LayoutDashboard: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>,
+            Trash2: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>,
+            Lock: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>,
+            Unlock: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>,
+            AlertCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>,
+            PiggyBank: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2h0V5z"></path><path d="M2 9v1c0 1.1.9 2 2 2h1"></path><path d="M16 11h0"></path></svg>,
+            Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+            Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>,
+            Microsoft: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.55 21H3v-8.55h8.55V21zM21 21h-8.55v-8.55H21V21zm-9.45-9.45H3V3h8.55v8.55zm9.45 0h-8.55V3H21v8.55z"/></svg>,
+            LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        };
+
+        // --- Configuration Handling ---
+        const getFirebaseConfig = () => {
+            if (typeof __firebase_config !== 'undefined') {
+                return JSON.parse(__firebase_config);
+            }
+            const localConfig = {
+                apiKey: "AIzaSyBtqk43KKems5IEDhFKDdeAsh2evAjIaek",
+                authDomain: "itech-restricted-funds.firebaseapp.com",
+                projectId: "itech-restricted-funds",
+                storageBucket: "itech-restricted-funds.firebasestorage.app",
+                messagingSenderId: "67669469828",
+                appId: "1:67669469828:web:2e5955d4a629ffcd01f0d1"
+            };
+            return localConfig;
+        };
+
+        const firebaseConfig = getFirebaseConfig();
+        if (!firebase.apps.length && firebaseConfig.apiKey) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'itech-charity-default';
+
+        function App() {
+            const [user, setUser] = React.useState(null);
+            const [loading, setLoading] = React.useState(true);
+            const [projects, setProjects] = React.useState([]);
+            const [totalCash, setTotalCash] = React.useState(4899.79);
+            const [settingsId, setSettingsId] = React.useState(null);
+            const [errorMsg, setErrorMsg] = React.useState(null);
+
+            React.useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                    setLoading(false);
+                    if (u) setErrorMsg(null);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Handle Microsoft Login (Azure SSO)
+            const handleLogin = async () => {
+                try {
+                    setLoading(true);
+                    const provider = new firebase.auth.OAuthProvider('microsoft.com');
+                    
+                    // You can add scopes if needed (e.g., mail.read), but defaults are usually fine for ID
+                    provider.setCustomParameters({
+                        // prompt: 'consent', // Force consent prompt if needed
+                        tenant: 'common' // Or your specific tenant ID if you are restricting to one org
+                    });
+
+                    await auth.signInWithPopup(provider);
+                } catch (error) {
+                    console.error("Login failed:", error);
+                    let userMsg = "Login Failed: " + error.message;
+                    if (error.code === 'auth/operation-not-allowed') {
+                        userMsg = "Microsoft Login not enabled. Please go to Firebase Console -> Authentication -> Sign-in method and enable 'Microsoft'.";
+                    } else if (error.code === 'auth/unauthorized-domain') {
+                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain (e.g., localhost).";
+                    }
+                    setErrorMsg(userMsg);
+                    setLoading(false);
+                }
+            };
+
+            const handleLogout = async () => {
+                await auth.signOut();
+            };
+
+            // Data Fetching
+            React.useEffect(() => {
+                if (!user) return;
+
+                const projectsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects');
+                const unsubscribeProjects = projectsRef.onSnapshot((snapshot) => {
+                    const projList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setProjects(projList);
+                }, (error) => console.error("Projects listener error:", error));
+
+                const settingsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings');
+                const unsubscribeSettings = settingsRef.onSnapshot((snapshot) => {
+                    if (!snapshot.empty) {
+                        const data = snapshot.docs[0].data();
+                        setTotalCash(data.totalCash || 0);
+                        setSettingsId(snapshot.docs[0].id);
+                    } else {
+                        settingsRef.add({ totalCash: 4899.79 });
+                    }
+                }, (error) => console.error("Settings listener error:", error));
+
+                return () => {
+                    unsubscribeProjects();
+                    unsubscribeSettings();
+                };
+            }, [user]);
+
+            // ... (Rest of logic remains same: specialProjects, handleUpdateTotalCash, etc.) ...
+            const specialProjects = projects.filter(p => p.type === 'special');
+            const generalProjects = projects.filter(p => p.type === 'general');
+            const totalAllocated = specialProjects.reduce((sum, p) => sum + (parseFloat(p.balance) || 0), 0);
+            const totalUnrestricted = totalCash - totalAllocated;
+
+            const handleUpdateTotalCash = async (newAmount) => {
+                if (!user || !settingsId) return;
+                const settingsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc(settingsId);
+                await settingsRef.update({ totalCash: parseFloat(newAmount) || 0 });
+            };
+
+            const handleAddProject = async (projectData) => {
+                if (!user) return;
+                await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').add({
+                    ...projectData,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    spent: 0
+                });
+            };
+
+            const handleDeleteProject = async (id) => {
+                if (!user) return;
+                if(window.confirm('Delete this project?')) {
+                    try {
+                        await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').doc(id).delete();
+                    } catch (e) {
+                        alert("Delete failed: " + e.message);
+                    }
+                }
+            };
+
+            const handleUpdateProjectBalance = async (id, currentBalance, changeAmount) => {
+                if (!user) return;
+                const safeCurrent = parseFloat(currentBalance) || 0;
+                const safeChange = parseFloat(changeAmount) || 0;
+                const safeTotalCash = parseFloat(totalCash) || 0;
+
+                try {
+                    const projectRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').doc(id);
+                    await projectRef.update({ balance: safeCurrent + safeChange });
+                    handleUpdateTotalCash(safeTotalCash + safeChange);
+                } catch (e) {
+                    alert("Update failed: " + e.message);
+                }
+            };
+
+            const seedData = async () => {
+                await handleAddProject({ name: 'Solar Project', balance: 3150.00, type: 'special', icon: 'sun', target: 5000 });
+                await handleAddProject({ name: 'Kiosk Setup', balance: 1500.00, type: 'special', icon: 'store', target: 2000 });
+                await handleUpdateTotalCash(4899.79);
+            };
+
+            const handlePrintReport = () => {
+                const printWindow = window.open('', '', 'width=800,height=600');
+                const date = new Date().toLocaleDateString();
+                const logoUrl = "https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png";
+                
+                const html = `
+                <html>
+                    <head>
+                    <title>ITech Charity Fund Report - ${date}<\/title>
+                    <style>
+                        body { font-family: sans-serif; padding: 40px; color: #333; }
+                        .header-container { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #eab308; padding-bottom: 20px; margin-bottom: 30px; }
+                        .logo { max-height: 80px; }
+                        h1 { color: #14532d; margin: 0; font-size: 24px; }
+                        .meta { color: #666; font-size: 14px; margin-top: 5px; }
+                        h2 { color: #14532d; margin-top: 30px; font-size: 18px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+                        h3 { color: #854d0e; margin-top: 0; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                        th { background-color: #f3f4f6; color: #111; font-weight: bold; }
+                        .amount-col { text-align: right; font-family: monospace; font-size: 1.1em; }
+                        .total-row { font-weight: bold; background-color: #f0fdf4; }
+                        .summary-box { border: 2px solid #14532d; padding: 20px; margin-bottom: 30px; background-color: #fdfce7; border-radius: 8px; }
+                        .summary-item { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #ccc; padding-bottom: 4px; }
+                        .summary-item:last-child { border-bottom: none; }
+                        .highlight { font-weight: bold; color: #14532d; }
+                        .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #eee; padding-top: 20px; }
+                    <\/style>
+                    <\/head>
+                    <body>
+                    <div class="header-container">
+                        <img src="${logoUrl}" alt="ITech Charities Logo" class="logo">
+                        <div class="report-title">
+                            <h1>Fund Status Report<\/h1>
+                            <div class="meta">Generated: ${date}<\/div>
+                        <\/div>
+                    <\/div>
+                    
+                    <div class="summary-box">
+                        <h3>Financial Summary<\/h3>
+                        <div class="summary-item">
+                        <span>Total Cash on Hand (Bank Balance)<\/span>
+                        <span class="highlight">$${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}<\/span>
+                        <\/div>
+                        <div class="summary-item">
+                        <span>Restricted Funds (Special Projects)<\/span>
+                        <span style="color: #b45309;">($${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })})<\/span>
+                        <\/div>
+                        <div class="summary-item" style="margin-top: 10px; border-top: 2px solid #14532d; padding-top: 10px; font-size: 1.1em;">
+                        <span>Available Operating Funds<\/span>
+                        <span class="highlight">$${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}<\/span>
+                        <\/div>
+                        <p style="margin-top: 15px; font-size: 0.9em; font-style: italic; color: #555;">
+                        *Required Savings Account Balance: <strong>$${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}<\/strong>
+                        <\/p>
+                    <\/div>
+
+                    <h2>Restricted Funds (Special Projects)<\/h2>
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Project Name<\/th>
+                            <th>Target Goal<\/th>
+                            <th class="amount-col">Current Balance<\/th>
+                        <\/tr>
+                        <\/thead>
+                        <tbody>
+                        ${specialProjects.map(p => `
+                            <tr>
+                            <td>${p.name}</td>
+                            <td>${p.target ? '$' + p.target.toLocaleString() : '-'}</td>
+                            <td class="amount-col">$${p.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                        `).join('')}
+                        <tr class="total-row">
+                            <td colspan="2">Total Restricted<\/td>
+                            <td class="amount-col">$${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}<\/td>
+                        <\/tr>
+                        <\/tbody>
+                    <\/table>
+
+                    <h2>General Funds (Operating)<\/h2>
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Fund Name<\/th>
+                            <th class="amount-col">Current Balance<\/th>
+                        <\/tr>
+                        <\/thead>
+                        <tbody>
+                        ${generalProjects.map(p => `
+                            <tr>
+                            <td>${p.name}</td>
+                            <td class="amount-col">$${p.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                        `).join('')}
+                        <tr class="total-row">
+                            <td>Unallocated Cash Surplus<\/td>
+                            <td class="amount-col">$${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}<\/td>
+                        <\/tr>
+                        <\/tbody>
+                    <\/table>
+                    
+                    <div class="footer">
+                        Generated by ITech Fund Tracker System for Internal Use.
+                    <\/div>
+                    <\/body>
+                <\/html>
+                `;
+                printWindow.document.write(html);
+                printWindow.document.close();
+                printWindow.focus();
+                setTimeout(() => { printWindow.print(); }, 250);
+            };
+
+            // --- RENDER ---
+            
+            // 1. Loading State
+            if (loading) return (
+                <div className="min-h-screen bg-green-950 flex items-center justify-center text-white">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+                </div>
+            );
+
+            // 2. Login Screen (Shown if no user is signed in)
+            if (!user) return (
+                <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center border-t-4 border-green-800">
+                        <img 
+                            src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" 
+                            alt="ITech Logo" 
+                            className="h-20 mx-auto mb-6"
+                        />
+                        <h2 className="text-2xl font-bold text-green-900 mb-2">Restricted Funds System</h2>
+                        <p className="text-gray-500 mb-8">Please sign in with your corporate account to access financial data.</p>
+                        
+                        {errorMsg && (
+                            <div className="bg-red-50 text-red-700 p-3 rounded text-sm mb-6 text-left border border-red-200">
+                                {errorMsg}
+                            </div>
+                        )}
+
+                        <button 
+                            onClick={handleLogin}
+                            className="w-full flex items-center justify-center space-x-3 bg-gray-800 hover:bg-gray-900 text-white px-4 py-3 rounded-md transition-all shadow-sm font-medium"
+                        >
+                            <Icons.Microsoft />
+                            <span>Sign in with Microsoft</span>
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // 3. Main Dashboard (Shown if user is signed in)
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+                    <header className="bg-green-900 text-white shadow-lg border-b-4 border-yellow-500">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <img 
+                                    src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" 
+                                    alt="ITech Logo" 
+                                    className="h-12 w-auto bg-white rounded p-1"
+                                />
+                                <div>
+                                    <h1 className="text-xl font-bold tracking-tight text-yellow-400">ITech Development Charities</h1>
+                                    <p className="text-xs text-green-200">Restricted Fund Management System</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                                <button 
+                                    type="button"
+                                    onClick={handlePrintReport}
+                                    className="flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-400 text-green-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm"
+                                >
+                                    <Icons.Printer />
+                                    <span className="hidden sm:inline">Print Report</span>
+                                </button>
+                                <div className="text-right hidden sm:block border-l border-green-700 pl-4">
+                                    <p className="text-sm text-green-200">Logged In</p>
+                                    <div className="flex items-center space-x-2">
+                                        <p className="font-medium">{user.displayName || user.email || 'User'}</p>
+                                        <button onClick={handleLogout} className="text-xs text-red-300 hover:text-white underline">Logout</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {/* Top Stats Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            {/* Total Cash */}
+                            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-800">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-500 uppercase">Total Cash on Hand</p>
+                                        <h2 className="text-3xl font-bold text-gray-900 mt-1">
+                                            ${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </h2>
+                                    </div>
+                                    <div className="p-2 bg-green-100 rounded-lg text-green-800">
+                                        <Icons.Wallet />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-4">Across all accounts (Checking + Savings)</p>
+                            </div>
+
+                            {/* Restricted Funds */}
+                            <div className="bg-green-900 rounded-xl shadow-md p-6 border-l-4 border-yellow-500 text-white">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="text-sm font-medium text-green-200 uppercase">Restricted Funds (Special)</p>
+                                        <h2 className="text-3xl font-bold text-yellow-400 mt-1">
+                                            ${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </h2>
+                                    </div>
+                                    <div className="p-2 bg-green-800 rounded-lg text-yellow-400">
+                                        <Icons.Lock />
+                                    </div>
+                                </div>
+                                <div className="mt-4 flex items-center text-xs text-green-200">
+                                    <div className="mr-1"><Icons.AlertCircle /></div>
+                                    <span>Must be used for specific projects</span>
+                                </div>
+                            </div>
+
+                            {/* Operating Funds */}
+                            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-gray-400">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-500 uppercase">Unrestricted Operating</p>
+                                        <h2 className={`text-3xl font-bold mt-1 ${totalUnrestricted < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                                            ${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </h2>
+                                    </div>
+                                    <div className="p-2 bg-gray-100 rounded-lg text-gray-600">
+                                        <Icons.Unlock />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-4">Available for general use</p>
+                            </div>
+                        </div>
+
+                        {/* Savings Allocation Warning */}
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-8 flex flex-col sm:flex-row items-center justify-between">
+                            <div className="flex items-center mb-4 sm:mb-0">
+                                <div className="bg-yellow-100 p-3 rounded-full mr-4 text-yellow-700">
+                                    <Icons.PiggyBank />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-yellow-900">Savings Allocation Recommendation</h3>
+                                    <p className="text-yellow-800 text-sm">
+                                        To keep Restricted Funds safe, your Savings Account balance should be at least:
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="text-2xl font-bold text-yellow-900 bg-white px-6 py-2 rounded-lg shadow-sm border border-yellow-100">
+                                ${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </div>
+                        </div>
+
+                        {/* Projects Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            
+                            {/* SPECIAL PROJECTS COLUMN */}
+                            <div className="space-y-6">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xl font-bold text-green-900 flex items-center">
+                                        <span className="w-2 h-8 bg-yellow-500 mr-3 rounded-sm"></span>
+                                        Special Projects
+                                    </h3>
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleAddProject({ name: 'New Project', balance: 0, type: 'special', icon: 'star' })}
+                                        className="text-sm bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200 transition-colors"
+                                    >
+                                        + Add Project
+                                    </button>
+                                </div>
+
+                                {specialProjects.length === 0 && (
+                                    <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300">
+                                        <p className="text-gray-500 mb-4">No special projects tracked yet.</p>
+                                        <button onClick={seedData} className="text-green-700 font-medium hover:underline">
+                                            Load Example Data
+                                        </button>
+                                    </div>
+                                )}
+
+                                {specialProjects.map(project => (
+                                    <ProjectCard 
+                                        key={project.id} 
+                                        project={project} 
+                                        onUpdate={handleUpdateProjectBalance}
+                                        onDelete={handleDeleteProject}
+                                        theme="dark"
+                                    />
+                                ))}
+                            </div>
+
+                            {/* GENERAL / OPERATING COLUMN */}
+                            <div className="space-y-6">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xl font-bold text-gray-800 flex items-center">
+                                        <span className="w-2 h-8 bg-gray-400 mr-3 rounded-sm"></span>
+                                        General Projects
+                                    </h3>
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleAddProject({ name: 'New General Fund', balance: 0, type: 'general', icon: 'briefcase' })}
+                                        className="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors"
+                                    >
+                                        + Add Fund
+                                    </button>
+                                </div>
+
+                                {/* Unrestricted Cash Card */}
+                                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-gray-50 rounded-bl-full -mr-4 -mt-4 z-0"></div>
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="p-2 bg-gray-100 rounded-lg text-gray-600">
+                                                    <Icons.Wallet />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-lg text-gray-800">Unallocated Cash</h4>
+                                                    <p className="text-xs text-gray-500">General operating surplus</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between items-end">
+                                            <div className="text-2xl font-bold text-gray-700">
+                                                ${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </div>
+                                            <div className="flex space-x-2">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const amt = window.prompt("Add funds to General/Unallocated Cash:");
+                                                        if (amt && !isNaN(amt)) handleUpdateTotalCash(totalCash + parseFloat(amt));
+                                                    }}
+                                                    className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm flex items-center"
+                                                >
+                                                    <div className="mr-1 h-3 w-3"><Icons.Plus /></div> Add Income
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {generalProjects.map(project => (
+                                    <ProjectCard 
+                                        key={project.id} 
+                                        project={project} 
+                                        onUpdate={handleUpdateProjectBalance}
+                                        onDelete={handleDeleteProject}
+                                        theme="light"
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* Footer with GitHub Link */}
+                    <footer className="bg-white border-t border-gray-200 mt-auto">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
+                            <p className="text-xs text-gray-500">© 2025 ITech Development Charities. All rights reserved.</p>
+                            <a 
+                                href="https://github.com/Xiurzeph/itech-development-charities" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs text-gray-400 hover:text-green-800 flex items-center space-x-1"
+                            >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                                <span>View Source on GitHub</span>
+                            </a>
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
