@@ -6,9 +6,9 @@
     <title>ITech Fund Tracker</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React & ReactDOM (Using cdnjs for better reliability) -->
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
     <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
@@ -23,7 +23,10 @@
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-    <div id="root"></div>
+    <!-- Initial loading text (removed by React once loaded) -->
+    <div id="root" class="flex items-center justify-center min-h-screen text-gray-500 font-sans">
+        Initializing System...
+    </div>
 
     <script type="text/babel">
         // --- ICONS (Inline SVGs) ---
@@ -80,13 +83,38 @@
             const [settingsId, setSettingsId] = React.useState(null);
             const [errorMsg, setErrorMsg] = React.useState(null);
 
+            // Authentication Listener with Safety Timeout
             React.useEffect(() => {
+                let mounted = true;
+                
+                // 1. Listen for Auth State
                 const unsubscribe = auth.onAuthStateChanged((u) => {
+                    if (!mounted) return;
+                    console.log("Auth state changed:", u ? "User logged in" : "No user");
                     setUser(u);
                     setLoading(false);
                     if (u) setErrorMsg(null);
                 });
-                return () => unsubscribe();
+
+                // 2. Safety Timeout (Fix for "Blank Page" on unauthorized domains)
+                // If Firebase is blocked by the domain setting, it might hang. We force the UI to show after 2.5 seconds.
+                const safetyTimer = setTimeout(() => {
+                    if (mounted) {
+                        setLoading((prev) => {
+                            if (prev) {
+                                console.warn("Auth listener timed out. forcing UI render.");
+                                return false; // Stop loading spinner
+                            }
+                            return prev;
+                        });
+                    }
+                }, 2500);
+
+                return () => {
+                    mounted = false;
+                    unsubscribe();
+                    clearTimeout(safetyTimer);
+                };
             }, []);
 
             // Handle Microsoft Login (Azure SSO)
@@ -108,7 +136,7 @@
                     if (error.code === 'auth/operation-not-allowed') {
                         userMsg = "Microsoft Login not enabled. Please go to Firebase Console -> Authentication -> Sign-in method and enable 'Microsoft'.";
                     } else if (error.code === 'auth/unauthorized-domain') {
-                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain (e.g., localhost).";
+                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain (e.g., 127.0.0.1 or your github.io).";
                     }
                     setErrorMsg(userMsg);
                     setLoading(false);
@@ -582,6 +610,9 @@
                 </div>
             );
         }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
