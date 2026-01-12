@@ -20,6 +20,7 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -45,7 +46,9 @@
             Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
             Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>,
             Microsoft: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.55 21H3v-8.55h8.55V21zM21 21h-8.55v-8.55H21V21zm-9.45-9.45H3V3h8.55v8.55zm9.45 0h-8.55V3H21v8.55z"/></svg>,
-            LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>,
+            X: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+            Pencil: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
         };
 
         // --- Configuration Handling ---
@@ -80,6 +83,28 @@
         const db = firebase.firestore();
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'itech-charity-default';
 
+        // --- COMPONENTS ---
+
+        // Reusable Modal Component to replace native window.prompt
+        function Modal({ isOpen, onClose, title, children }) {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden transform transition-all">
+                        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+                            <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                <Icons.X />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         function App() {
             const [user, setUser] = React.useState(null);
             const [loading, setLoading] = React.useState(true);
@@ -88,11 +113,18 @@
             const [settingsId, setSettingsId] = React.useState(null);
             const [errorMsg, setErrorMsg] = React.useState(null);
 
+            // Modal States
+            const [modalConfig, setModalConfig] = React.useState({ 
+                isOpen: false, 
+                type: null, // 'transaction', 'addProject', 'delete', 'editTotalCash'
+                data: null 
+            });
+            const [inputValue, setInputValue] = React.useState('');
+            const [inputName, setInputName] = React.useState('');
+
             // Authentication Listener with Safety Timeout
             React.useEffect(() => {
                 let mounted = true;
-                
-                // 1. Listen for Auth State
                 const unsubscribe = auth.onAuthStateChanged((u) => {
                     if (!mounted) return;
                     console.log("Auth state changed:", u ? "User logged in" : "No user");
@@ -101,13 +133,12 @@
                     if (u) setErrorMsg(null);
                 });
 
-                // 2. Safety Timeout (Fix for "Blank Page" on unauthorized domains)
                 const safetyTimer = setTimeout(() => {
                     if (mounted) {
                         setLoading((prev) => {
                             if (prev) {
                                 console.warn("Auth listener timed out. forcing UI render.");
-                                return false; // Stop loading spinner
+                                return false; 
                             }
                             return prev;
                         });
@@ -121,117 +152,158 @@
                 };
             }, []);
 
-            // Handle Microsoft Login (Azure SSO)
+            // Login Handlers
             const handleLogin = async () => {
                 try {
                     setLoading(true);
                     const provider = new firebase.auth.OAuthProvider('microsoft.com');
-                    
-                    // FIXED: Using specific Tenant ID for Single Tenant App
-                    provider.setCustomParameters({
-                        tenant: azureTenantId 
-                    });
-
+                    provider.setCustomParameters({ tenant: azureTenantId });
                     await auth.signInWithPopup(provider);
                 } catch (error) {
                     console.error("Login failed:", error);
                     let userMsg = "Login Failed: " + error.message;
-                    
                     if (error.code === 'auth/operation-not-allowed') {
-                        userMsg = "Microsoft Login not enabled. Please go to Firebase Console -> Authentication -> Sign-in method and enable 'Microsoft'.";
+                        userMsg = "Microsoft Login not enabled. Check Firebase Console.";
                     } else if (error.code === 'auth/unauthorized-domain') {
-                        userMsg = "Domain not authorized. Please go to Firebase Console -> Authentication -> Settings -> Authorized domains and add this domain.";
+                        userMsg = "Domain not authorized. Check Firebase Console -> Auth -> Settings.";
                     } else if (error.message.includes('AADSTS50194')) {
-                        userMsg = "Tenant Error: The app is Single Tenant but the code tried to use a Common endpoint. Please ensure 'azureTenantId' is set correctly in the code.";
+                        userMsg = "Tenant Error: Ensure 'azureTenantId' is set correctly in code.";
                     }
-                    
                     setErrorMsg(userMsg);
                     setLoading(false);
                 }
             };
 
-            const handleLogout = async () => {
-                await auth.signOut();
-            };
+            const handleLogout = async () => { await auth.signOut(); };
 
-            // Data Fetching
+            // Data Fetching - CHANGED TO SHARED PUBLIC PATH
             React.useEffect(() => {
                 if (!user) return;
-
-                const projectsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects');
+                
+                // Using 'public/data' path so all authenticated users share the same data
+                const projectsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('projects');
                 const unsubscribeProjects = projectsRef.onSnapshot((snapshot) => {
                     const projList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setProjects(projList);
                 }, (error) => console.error("Projects listener error:", error));
 
-                const settingsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings');
+                const settingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings');
                 const unsubscribeSettings = settingsRef.onSnapshot((snapshot) => {
                     if (!snapshot.empty) {
                         const data = snapshot.docs[0].data();
                         setTotalCash(data.totalCash || 0);
                         setSettingsId(snapshot.docs[0].id);
                     } else {
+                        // Initialize default if empty
                         settingsRef.add({ totalCash: 4899.79 });
                     }
                 }, (error) => console.error("Settings listener error:", error));
 
-                return () => {
-                    unsubscribeProjects();
-                    unsubscribeSettings();
-                };
+                return () => { unsubscribeProjects(); unsubscribeSettings(); };
             }, [user]);
 
-            // ... (Rest of logic remains same: specialProjects, handleUpdateTotalCash, etc.) ...
             const specialProjects = projects.filter(p => p.type === 'special');
             const generalProjects = projects.filter(p => p.type === 'general');
             const totalAllocated = specialProjects.reduce((sum, p) => sum + (parseFloat(p.balance) || 0), 0);
             const totalUnrestricted = totalCash - totalAllocated;
 
-            const handleUpdateTotalCash = async (newAmount) => {
+            // --- DATABASE ACTIONS (UPDATED FOR SHARED PATH) ---
+            const dbUpdateTotalCash = async (newAmount) => {
                 if (!user || !settingsId) return;
-                const settingsRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc(settingsId);
+                const settingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc(settingsId);
                 await settingsRef.update({ totalCash: parseFloat(newAmount) || 0 });
             };
 
-            const handleAddProject = async (projectData) => {
+            const dbAddProject = async (projectData) => {
                 if (!user) return;
-                await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').add({
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('projects').add({
                     ...projectData,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     spent: 0
                 });
             };
 
-            const handleDeleteProject = async (id) => {
+            const dbDeleteProject = async (id) => {
                 if (!user) return;
-                if(window.confirm('Delete this project?')) {
-                    try {
-                        await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').doc(id).delete();
-                    } catch (e) {
-                        alert("Delete failed: " + e.message);
-                    }
-                }
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('projects').doc(id).delete();
             };
 
-            const handleUpdateProjectBalance = async (id, currentBalance, changeAmount) => {
+            const dbUpdateProjectBalance = async (id, currentBalance, changeAmount) => {
                 if (!user) return;
                 const safeCurrent = parseFloat(currentBalance) || 0;
                 const safeChange = parseFloat(changeAmount) || 0;
                 const safeTotalCash = parseFloat(totalCash) || 0;
+                const projectRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('projects').doc(id);
+                await projectRef.update({ balance: safeCurrent + safeChange });
+                await dbUpdateTotalCash(safeTotalCash + safeChange);
+            };
 
-                try {
-                    const projectRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('projects').doc(id);
-                    await projectRef.update({ balance: safeCurrent + safeChange });
-                    handleUpdateTotalCash(safeTotalCash + safeChange);
-                } catch (e) {
-                    alert("Update failed: " + e.message);
+            // --- UI ACTIONS & MODAL HANDLERS ---
+            
+            const openTransactionModal = (project, transactionType) => {
+                // transactionType: 'add' (Donation) or 'spend' (Expense) or 'general_income'
+                setInputValue('');
+                setModalConfig({ isOpen: true, type: 'transaction', data: { project, transactionType } });
+            };
+
+            const openAddProjectModal = (categoryType) => {
+                // categoryType: 'special' or 'general'
+                setInputName('');
+                setInputValue('0'); // Initial balance
+                setModalConfig({ isOpen: true, type: 'addProject', data: { categoryType } });
+            };
+
+            const openEditTotalCashModal = () => {
+                setInputValue(totalCash.toString());
+                setModalConfig({ isOpen: true, type: 'editTotalCash', data: null });
+            };
+
+            const closeModal = () => {
+                setModalConfig({ ...modalConfig, isOpen: false });
+                setInputValue('');
+                setInputName('');
+            };
+
+            const handleModalSubmit = async (e) => {
+                e.preventDefault();
+                const { type, data } = modalConfig;
+
+                if (type === 'transaction') {
+                    const amount = parseFloat(inputValue);
+                    if (isNaN(amount) || amount <= 0) return alert("Please enter a valid amount");
+
+                    if (data.transactionType === 'general_income') {
+                        // General Income to total cash
+                        await dbUpdateTotalCash(totalCash + amount);
+                    } else {
+                        // Project Specific
+                        const isExpense = data.transactionType === 'spend';
+                        const change = isExpense ? -amount : amount;
+                        await dbUpdateProjectBalance(data.project.id, data.project.balance, change);
+                    }
+                } else if (type === 'addProject') {
+                    if (!inputName.trim()) return alert("Please enter a project name");
+                    await dbAddProject({
+                        name: inputName,
+                        balance: parseFloat(inputValue) || 0,
+                        type: data.categoryType,
+                        icon: data.categoryType === 'special' ? 'star' : 'briefcase',
+                        target: 0
+                    });
+                } else if (type === 'editTotalCash') {
+                     const amount = parseFloat(inputValue);
+                     if (isNaN(amount) || amount < 0) return alert("Please enter a valid amount");
+                     await dbUpdateTotalCash(amount);
                 }
+                closeModal();
             };
 
             const seedData = async () => {
-                await handleAddProject({ name: 'Solar Project', balance: 3150.00, type: 'special', icon: 'sun', target: 5000 });
-                await handleAddProject({ name: 'Kiosk Setup', balance: 1500.00, type: 'special', icon: 'store', target: 2000 });
-                await handleUpdateTotalCash(4899.79);
+                if(confirm("Load example data?")) {
+                    await dbAddProject({ name: 'Solar Project', balance: 3150.00, type: 'special', icon: 'sun', target: 5000 });
+                    await dbAddProject({ name: 'Kiosk Setup', balance: 1500.00, type: 'special', icon: 'store', target: 2000 });
+                    await dbUpdateTotalCash(4899.79);
+                }
             };
 
             const handlePrintReport = () => {
@@ -351,66 +423,40 @@
 
             // --- RENDER ---
             
-            // 1. Loading State
             if (loading) return (
                 <div className="min-h-screen bg-green-950 flex items-center justify-center text-white">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
                 </div>
             );
 
-            // 2. Login Screen (Shown if no user is signed in)
             if (!user) return (
                 <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
                     <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center border-t-4 border-green-800">
-                        <img 
-                            src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" 
-                            alt="ITech Logo" 
-                            className="h-20 mx-auto mb-6"
-                        />
+                        <img src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" alt="ITech Logo" className="h-20 mx-auto mb-6" />
                         <h2 className="text-2xl font-bold text-green-900 mb-2">Restricted Funds System</h2>
                         <p className="text-gray-500 mb-8">Please sign in with your corporate account to access financial data.</p>
-                        
-                        {errorMsg && (
-                            <div className="bg-red-50 text-red-700 p-3 rounded text-sm mb-6 text-left border border-red-200">
-                                {errorMsg}
-                            </div>
-                        )}
-
-                        <button 
-                            onClick={handleLogin}
-                            className="w-full flex items-center justify-center space-x-3 bg-gray-800 hover:bg-gray-900 text-white px-4 py-3 rounded-md transition-all shadow-sm font-medium"
-                        >
-                            <Icons.Microsoft />
-                            <span>Sign in with Microsoft</span>
+                        {errorMsg && <div className="bg-red-50 text-red-700 p-3 rounded text-sm mb-6 text-left border border-red-200">{errorMsg}</div>}
+                        <button onClick={handleLogin} className="w-full flex items-center justify-center space-x-3 bg-gray-800 hover:bg-gray-900 text-white px-4 py-3 rounded-md transition-all shadow-sm font-medium">
+                            <Icons.Microsoft /> <span>Sign in with Microsoft</span>
                         </button>
                     </div>
                 </div>
             );
 
-            // 3. Main Dashboard (Shown if user is signed in)
             return (
                 <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
                     <header className="bg-green-900 text-white shadow-lg border-b-4 border-yellow-500">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
                             <div className="flex items-center space-x-3">
-                                <img 
-                                    src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" 
-                                    alt="ITech Logo" 
-                                    className="h-12 w-auto bg-white rounded p-1"
-                                />
+                                <img src="https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png" alt="ITech Logo" className="h-12 w-auto bg-white rounded p-1" />
                                 <div>
                                     <h1 className="text-xl font-bold tracking-tight text-yellow-400">ITech Development Charities</h1>
                                     <p className="text-xs text-green-200">Restricted Fund Management System</p>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">
-                                <button 
-                                    type="button"
-                                    onClick={handlePrintReport}
-                                    className="flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-400 text-green-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm"
-                                >
-                                    <Icons.Printer />
-                                    <span className="hidden sm:inline">Print Report</span>
+                                <button type="button" onClick={handlePrintReport} className="flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-400 text-green-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                                    <Icons.Printer /> <span className="hidden sm:inline">Print Report</span>
                                 </button>
                                 <div className="text-right hidden sm:block border-l border-green-700 pl-4">
                                     <p className="text-sm text-green-200">Logged In</p>
@@ -426,194 +472,180 @@
                     <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
                         {/* Top Stats Cards */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            {/* Total Cash */}
                             <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-800">
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <p className="text-sm font-medium text-gray-500 uppercase">Total Cash on Hand</p>
-                                        <h2 className="text-3xl font-bold text-gray-900 mt-1">
-                                            ${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                        </h2>
+                                        <div className="flex items-center space-x-2">
+                                            <p className="text-sm font-medium text-gray-500 uppercase">Total Cash on Hand</p>
+                                            <button onClick={openEditTotalCashModal} className="text-gray-400 hover:text-green-600 transition-colors">
+                                                <div className="h-4 w-4"><Icons.Pencil /></div>
+                                            </button>
+                                        </div>
+                                        <h2 className="text-3xl font-bold text-gray-900 mt-1">${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h2>
                                     </div>
-                                    <div className="p-2 bg-green-100 rounded-lg text-green-800">
-                                        <Icons.Wallet />
-                                    </div>
+                                    <div className="p-2 bg-green-100 rounded-lg text-green-800"><Icons.Wallet /></div>
                                 </div>
                                 <p className="text-xs text-gray-400 mt-4">Across all accounts (Checking + Savings)</p>
                             </div>
-
-                            {/* Restricted Funds */}
                             <div className="bg-green-900 rounded-xl shadow-md p-6 border-l-4 border-yellow-500 text-white">
                                 <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="text-sm font-medium text-green-200 uppercase">Restricted Funds (Special)</p>
-                                        <h2 className="text-3xl font-bold text-yellow-400 mt-1">
-                                            ${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                        </h2>
-                                    </div>
-                                    <div className="p-2 bg-green-800 rounded-lg text-yellow-400">
-                                        <Icons.Lock />
-                                    </div>
+                                    <div><p className="text-sm font-medium text-green-200 uppercase">Restricted Funds (Special)</p><h2 className="text-3xl font-bold text-yellow-400 mt-1">${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h2></div>
+                                    <div className="p-2 bg-green-800 rounded-lg text-yellow-400"><Icons.Lock /></div>
                                 </div>
-                                <div className="mt-4 flex items-center text-xs text-green-200">
-                                    <div className="mr-1"><Icons.AlertCircle /></div>
-                                    <span>Must be used for specific projects</span>
-                                </div>
+                                <div className="mt-4 flex items-center text-xs text-green-200"><div className="mr-1"><Icons.AlertCircle /></div><span>Must be used for specific projects</span></div>
                             </div>
-
-                            {/* Operating Funds */}
                             <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-gray-400">
                                 <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-500 uppercase">Unrestricted Operating</p>
-                                        <h2 className={`text-3xl font-bold mt-1 ${totalUnrestricted < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                                            ${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                        </h2>
-                                    </div>
-                                    <div className="p-2 bg-gray-100 rounded-lg text-gray-600">
-                                        <Icons.Unlock />
-                                    </div>
+                                    <div><p className="text-sm font-medium text-gray-500 uppercase">Unrestricted Operating</p><h2 className={`text-3xl font-bold mt-1 ${totalUnrestricted < 0 ? 'text-red-600' : 'text-gray-900'}`}>${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h2></div>
+                                    <div className="p-2 bg-gray-100 rounded-lg text-gray-600"><Icons.Unlock /></div>
                                 </div>
                                 <p className="text-xs text-gray-400 mt-4">Available for general use</p>
                             </div>
                         </div>
 
-                        {/* Savings Allocation Warning */}
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-8 flex flex-col sm:flex-row items-center justify-between">
                             <div className="flex items-center mb-4 sm:mb-0">
-                                <div className="bg-yellow-100 p-3 rounded-full mr-4 text-yellow-700">
-                                    <Icons.PiggyBank />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-yellow-900">Savings Allocation Recommendation</h3>
-                                    <p className="text-yellow-800 text-sm">
-                                        To keep Restricted Funds safe, your Savings Account balance should be at least:
-                                    </p>
-                                </div>
+                                <div className="bg-yellow-100 p-3 rounded-full mr-4 text-yellow-700"><Icons.PiggyBank /></div>
+                                <div><h3 className="text-lg font-semibold text-yellow-900">Savings Allocation Recommendation</h3><p className="text-yellow-800 text-sm">To keep Restricted Funds safe, your Savings Account balance should be at least:</p></div>
                             </div>
-                            <div className="text-2xl font-bold text-yellow-900 bg-white px-6 py-2 rounded-lg shadow-sm border border-yellow-100">
-                                ${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </div>
+                            <div className="text-2xl font-bold text-yellow-900 bg-white px-6 py-2 rounded-lg shadow-sm border border-yellow-100">${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                         </div>
 
-                        {/* Projects Grid */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            
-                            {/* SPECIAL PROJECTS COLUMN */}
                             <div className="space-y-6">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-xl font-bold text-green-900 flex items-center">
-                                        <span className="w-2 h-8 bg-yellow-500 mr-3 rounded-sm"></span>
-                                        Special Projects
-                                    </h3>
-                                    <button 
-                                        type="button"
-                                        onClick={() => handleAddProject({ name: 'New Project', balance: 0, type: 'special', icon: 'star' })}
-                                        className="text-sm bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200 transition-colors"
-                                    >
-                                        + Add Project
-                                    </button>
+                                    <h3 className="text-xl font-bold text-green-900 flex items-center"><span className="w-2 h-8 bg-yellow-500 mr-3 rounded-sm"></span>Special Projects</h3>
+                                    <button type="button" onClick={() => openAddProjectModal('special')} className="text-sm bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200 transition-colors">+ Add Project</button>
                                 </div>
-
-                                {specialProjects.length === 0 && (
-                                    <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300">
-                                        <p className="text-gray-500 mb-4">No special projects tracked yet.</p>
-                                        <button onClick={seedData} className="text-green-700 font-medium hover:underline">
-                                            Load Example Data
-                                        </button>
-                                    </div>
-                                )}
-
-                                {specialProjects.map(project => (
-                                    <ProjectCard 
-                                        key={project.id} 
-                                        project={project} 
-                                        onUpdate={handleUpdateProjectBalance}
-                                        onDelete={handleDeleteProject}
-                                        theme="dark"
-                                    />
-                                ))}
+                                {specialProjects.length === 0 && <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300"><p className="text-gray-500 mb-4">No special projects tracked yet.</p><button onClick={seedData} className="text-green-700 font-medium hover:underline">Load Example Data</button></div>}
+                                {specialProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onDelete={dbDeleteProject} theme="dark" />)}
                             </div>
 
-                            {/* GENERAL / OPERATING COLUMN */}
                             <div className="space-y-6">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-xl font-bold text-gray-800 flex items-center">
-                                        <span className="w-2 h-8 bg-gray-400 mr-3 rounded-sm"></span>
-                                        General Projects
-                                    </h3>
-                                    <button 
-                                        type="button"
-                                        onClick={() => handleAddProject({ name: 'New General Fund', balance: 0, type: 'general', icon: 'briefcase' })}
-                                        className="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors"
-                                    >
-                                        + Add Fund
-                                    </button>
+                                    <h3 className="text-xl font-bold text-gray-800 flex items-center"><span className="w-2 h-8 bg-gray-400 mr-3 rounded-sm"></span>General Projects</h3>
+                                    <button type="button" onClick={() => openAddProjectModal('general')} className="text-sm bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors">+ Add Fund</button>
                                 </div>
-
-                                {/* Unrestricted Cash Card */}
                                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 w-24 h-24 bg-gray-50 rounded-bl-full -mr-4 -mt-4 z-0"></div>
                                     <div className="relative z-10">
                                         <div className="flex justify-between items-start mb-4">
                                             <div className="flex items-center space-x-3">
-                                                <div className="p-2 bg-gray-100 rounded-lg text-gray-600">
-                                                    <Icons.Wallet />
-                                                </div>
-                                                <div>
-                                                    <h4 className="font-bold text-lg text-gray-800">Unallocated Cash</h4>
-                                                    <p className="text-xs text-gray-500">General operating surplus</p>
-                                                </div>
+                                                <div className="p-2 bg-gray-100 rounded-lg text-gray-600"><Icons.Wallet /></div>
+                                                <div><h4 className="font-bold text-lg text-gray-800">Unallocated Cash</h4><p className="text-xs text-gray-500">General operating surplus</p></div>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-end">
-                                            <div className="text-2xl font-bold text-gray-700">
-                                                ${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                            </div>
-                                            <div className="flex space-x-2">
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const amt = window.prompt("Add funds to General/Unallocated Cash:");
-                                                        if (amt && !isNaN(amt)) handleUpdateTotalCash(totalCash + parseFloat(amt));
-                                                    }}
-                                                    className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm flex items-center"
-                                                >
-                                                    <div className="mr-1 h-3 w-3"><Icons.Plus /></div> Add Income
-                                                </button>
-                                            </div>
+                                            <div className="text-2xl font-bold text-gray-700">${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                            <div className="flex space-x-2"><button type="button" onClick={() => openTransactionModal(null, 'general_income')} className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-sm flex items-center"><div className="mr-1 h-3 w-3"><Icons.Plus /></div> Add Income</button></div>
                                         </div>
                                     </div>
                                 </div>
-
-                                {generalProjects.map(project => (
-                                    <ProjectCard 
-                                        key={project.id} 
-                                        project={project} 
-                                        onUpdate={handleUpdateProjectBalance}
-                                        onDelete={handleDeleteProject}
-                                        theme="light"
-                                    />
-                                ))}
+                                {generalProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onDelete={dbDeleteProject} theme="light" />)}
                             </div>
                         </div>
                     </main>
 
-                    {/* Footer with GitHub Link */}
                     <footer className="bg-white border-t border-gray-200 mt-auto">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
                             <p className="text-xs text-gray-500">© 2025 ITech Development Charities. All rights reserved.</p>
-                            <a 
-                                href="https://github.com/Xiurzeph/itech-development-charities" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-xs text-gray-400 hover:text-green-800 flex items-center space-x-1"
-                            >
-                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                                <span>View Source on GitHub</span>
+                            <a href="https://github.com/Xiurzeph/itech-development-charities" target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-green-800 flex items-center space-x-1">
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg><span>View Source on GitHub</span>
                             </a>
                         </div>
                     </footer>
+
+                    {/* --- MODAL RENDERING --- */}
+                    <Modal 
+                        isOpen={modalConfig.isOpen} 
+                        onClose={closeModal} 
+                        title={
+                            modalConfig.type === 'transaction' 
+                                ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income')
+                                : modalConfig.type === 'addProject'
+                                    ? 'Create New Project'
+                                    : 'Update Total Cash'
+                        }
+                    >
+                        <form onSubmit={handleModalSubmit} className="space-y-4">
+                            {modalConfig.type === 'addProject' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+                                    <input 
+                                        type="text" 
+                                        autoFocus
+                                        value={inputName} 
+                                        onChange={(e) => setInputName(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                        placeholder="e.g., Food Drive" 
+                                    />
+                                </div>
+                            )}
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editTotalCash' ? 'New Balance' : 'Amount'}
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <span className="text-gray-500 sm:text-sm">$</span>
+                                    </div>
+                                    <input 
+                                        type="number" 
+                                        step="0.01"
+                                        autoFocus={modalConfig.type === 'transaction' || modalConfig.type === 'editTotalCash'}
+                                        value={inputValue} 
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        className="w-full pl-7 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                        placeholder="0.00" 
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button type="button" onClick={closeModal} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md">
+                                    Cancel
+                                </button>
+                                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-700 hover:bg-green-800 rounded-md">
+                                    {modalConfig.type === 'addProject' ? 'Create Project' : modalConfig.type === 'editTotalCash' ? 'Update Balance' : 'Confirm Transaction'}
+                                </button>
+                            </div>
+                        </form>
+                    </Modal>
+                </div>
+            );
+        }
+
+        function ProjectCard({ project, onTransact, onDelete, theme }) {
+            const isDark = theme === 'dark';
+            return (
+                <div className={`rounded-lg shadow-sm border p-6 relative transition-all hover:shadow-md ${isDark ? 'bg-green-800 border-green-700 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center space-x-3">
+                            <div className={`p-2 rounded-lg ${isDark ? 'bg-green-700 text-yellow-400' : 'bg-gray-100 text-blue-600'}`}>
+                                {project.icon === 'sun' && <Icons.Sun />}
+                                {project.icon === 'store' && <Icons.Store />}
+                                {project.icon === 'star' && <Icons.LayoutDashboard />}
+                                {project.icon === 'briefcase' && <Icons.Wallet />}
+                            </div>
+                            <div>
+                                <h4 className={`font-bold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>{project.name}</h4>
+                                <p className={`text-xs ${isDark ? 'text-green-300' : 'text-gray-500'}`}>{project.type === 'special' ? 'Restricted Fund' : 'General Project'}</p>
+                            </div>
+                        </div>
+                        <button type="button" onClick={() => { if(window.confirm('Delete this project?')) onDelete(project.id); }} className={`text-xs p-1 rounded hover:bg-opacity-20 ${isDark ? 'hover:bg-red-500 text-green-300' : 'hover:bg-red-100 text-gray-400'}`}><div className="h-4 w-4"><Icons.Trash2 /></div></button>
+                    </div>
+                    <div className="mb-6">
+                        <div className="flex justify-between items-end mb-1">
+                            <div className={`text-3xl font-bold ${isDark ? 'text-yellow-400' : 'text-gray-800'}`}>${(project.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                            {project.target && <div className={`text-xs ${isDark ? 'text-green-300' : 'text-gray-500'}`}>Target: ${project.target.toLocaleString()}</div>}
+                        </div>
+                        {project.target && <div className={`w-full h-2 rounded-full mt-2 ${isDark ? 'bg-green-900' : 'bg-gray-100'}`}><div className={`h-full rounded-full ${isDark ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(((project.balance || 0) / project.target) * 100, 100)}%` }}></div></div>}
+                    </div>
+                    <div className="flex space-x-3 border-t pt-4 border-opacity-20 border-gray-400">
+                        <button type="button" onClick={() => onTransact(project, 'add')} className={`flex-1 py-2 rounded text-sm font-medium flex items-center justify-center space-x-2 transition-colors ${isDark ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-blue-50 hover:bg-blue-100 text-blue-700'}`}><div className="h-4 w-4"><Icons.TrendingUp /></div><span>Add Donation</span></button>
+                        <button type="button" onClick={() => onTransact(project, 'spend')} className={`flex-1 py-2 rounded text-sm font-medium flex items-center justify-center space-x-2 transition-colors ${isDark ? 'bg-green-900 hover:bg-green-950 text-green-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}><div className="h-4 w-4"><Icons.TrendingDown /></div><span>Log Expense</span></button>
+                    </div>
                 </div>
             );
         }
