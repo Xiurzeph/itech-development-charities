@@ -50,10 +50,8 @@
 
         // --- Configuration Handling ---
         
-        // ** IMPORTANT **
-        // Because your Azure app is "Single Tenant" (locked to your org), 
-        // you MUST provide your Directory (Tenant) ID below.
-        // Go to Azure Portal -> App Registrations -> ITech Fund Tracker -> Overview -> Directory (tenant) ID
+        // ** CONFIGURATION **
+        // Azure Directory (Tenant) ID for Single Tenant Apps
         const azureTenantId = "0b13aea2-8f34-4af4-bd7a-d950720cd00a"; 
 
         const getFirebaseConfig = () => {
@@ -126,16 +124,10 @@
             // Handle Microsoft Login (Azure SSO)
             const handleLogin = async () => {
                 try {
-                    // Check if Tenant ID is set
-                    if (azureTenantId === "PASTE_YOUR_TENANT_ID_HERE") {
-                        setErrorMsg("Configuration Error: Please open the HTML file and paste your Azure Directory (Tenant) ID into the 'azureTenantId' variable.");
-                        return;
-                    }
-
                     setLoading(true);
                     const provider = new firebase.auth.OAuthProvider('microsoft.com');
                     
-                    // FIXED: Use the specific Tenant ID instead of 'common'
+                    // FIXED: Using specific Tenant ID for Single Tenant App
                     provider.setCustomParameters({
                         tenant: azureTenantId 
                     });
