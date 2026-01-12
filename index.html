@@ -298,12 +298,8 @@
                 closeModal();
             };
 
-            const seedData = async () => {
-                if(confirm("Load example data?")) {
-                    await dbAddProject({ name: 'Solar Project', balance: 3150.00, type: 'special', icon: 'sun', target: 5000 });
-                    await dbAddProject({ name: 'Kiosk Setup', balance: 1500.00, type: 'special', icon: 'store', target: 2000 });
-                    await dbUpdateTotalCash(4899.79);
-                }
+            const handleReloadData = () => {
+                window.location.reload();
             };
 
             const handlePrintReport = () => {
@@ -517,7 +513,7 @@
                                     <h3 className="text-xl font-bold text-green-900 flex items-center"><span className="w-2 h-8 bg-yellow-500 mr-3 rounded-sm"></span>Special Projects</h3>
                                     <button type="button" onClick={() => openAddProjectModal('special')} className="text-sm bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200 transition-colors">+ Add Project</button>
                                 </div>
-                                {specialProjects.length === 0 && <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300"><p className="text-gray-500 mb-4">No special projects tracked yet.</p><button onClick={seedData} className="text-green-700 font-medium hover:underline">Load Example Data</button></div>}
+                                {specialProjects.length === 0 && <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300"><p className="text-gray-500 mb-4">No special projects found.</p><button onClick={handleReloadData} className="text-green-700 font-medium hover:underline">Reload Data from Database</button></div>}
                                 {specialProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onDelete={dbDeleteProject} theme="dark" />)}
                             </div>
 
