@@ -117,11 +117,12 @@
             // Modal States
             const [modalConfig, setModalConfig] = React.useState({ 
                 isOpen: false, 
-                type: null, // 'transaction', 'addProject', 'delete', 'editTotalCash'
+                type: null, // 'transaction', 'addProject', 'editProject', 'delete', 'editTotalCash'
                 data: null 
             });
             const [inputValue, setInputValue] = React.useState('');
             const [inputName, setInputName] = React.useState('');
+            const [inputTarget, setInputTarget] = React.useState('');
 
             // Authentication Listener with Safety Timeout
             React.useEffect(() => {
@@ -250,6 +251,19 @@
                 await dbUpdateTotalCash(safeTotalCash + safeChange);
             };
 
+            const dbUpdateProjectDetails = async (id, updatedData, newBalance, oldBalance) => {
+                if (!user) return;
+                const projectRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('projects').doc(id);
+                await projectRef.update(updatedData);
+                
+                // If balance was manually edited in the edit modal, update total cash
+                if (newBalance !== undefined && oldBalance !== undefined && newBalance !== oldBalance) {
+                    const diff = newBalance - oldBalance;
+                    const safeTotalCash = parseFloat(totalCash) || 0;
+                    await dbUpdateTotalCash(safeTotalCash + diff);
+                }
+            };
+
             // --- UI ACTIONS & MODAL HANDLERS ---
             
             const openTransactionModal = (project, transactionType) => {
@@ -262,7 +276,15 @@
                 // categoryType: 'special' or 'general'
                 setInputName('');
                 setInputValue('0'); // Initial balance
+                setInputTarget('0');
                 setModalConfig({ isOpen: true, type: 'addProject', data: { categoryType } });
+            };
+
+            const openEditProjectModal = (project) => {
+                setInputName(project.name);
+                setInputValue(project.balance.toString());
+                setInputTarget(project.target ? project.target.toString() : '0');
+                setModalConfig({ isOpen: true, type: 'editProject', data: { project } });
             };
 
             const openEditTotalCashModal = () => {
@@ -274,6 +296,7 @@
                 setModalConfig({ ...modalConfig, isOpen: false });
                 setInputValue('');
                 setInputName('');
+                setInputTarget('');
             };
 
             const handleModalSubmit = async (e) => {
@@ -300,8 +323,23 @@
                         balance: parseFloat(inputValue) || 0,
                         type: data.categoryType,
                         icon: data.categoryType === 'special' ? 'star' : 'briefcase',
-                        target: 0
+                        target: parseFloat(inputTarget) || 0
                     });
+                } else if (type === 'editProject') {
+                    if (!inputName.trim()) return alert("Please enter a project name");
+                    const newBalance = parseFloat(inputValue);
+                    if (isNaN(newBalance)) return alert("Please enter a valid balance");
+                    
+                    await dbUpdateProjectDetails(
+                        data.project.id, 
+                        {
+                            name: inputName,
+                            balance: newBalance,
+                            target: parseFloat(inputTarget) || 0
+                        },
+                        newBalance,
+                        data.project.balance
+                    );
                 } else if (type === 'editTotalCash') {
                      const amount = parseFloat(inputValue);
                      if (isNaN(amount) || amount < 0) return alert("Please enter a valid amount");
@@ -532,7 +570,7 @@
                                     <button type="button" onClick={() => openAddProjectModal('special')} className="text-sm bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200 transition-colors">+ Add Project</button>
                                 </div>
                                 {specialProjects.length === 0 && <div className="text-center p-8 bg-white rounded-lg shadow-sm border border-dashed border-gray-300"><p className="text-gray-500 mb-4">No special projects found.</p><button onClick={handleReloadData} className="text-green-700 font-medium hover:underline">Reload Data from Database</button></div>}
-                                {specialProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onDelete={dbDeleteProject} theme="dark" />)}
+                                {specialProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onEdit={openEditProjectModal} onDelete={dbDeleteProject} theme="dark" />)}
                             </div>
 
                             <div className="space-y-6">
@@ -555,7 +593,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                {generalProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onDelete={dbDeleteProject} theme="light" />)}
+                                {generalProjects.map(project => <ProjectCard key={project.id} project={project} onTransact={openTransactionModal} onEdit={openEditProjectModal} onDelete={dbDeleteProject} theme="light" />)}
                             </div>
                         </div>
                     </main>
@@ -578,11 +616,13 @@
                                 ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income')
                                 : modalConfig.type === 'addProject'
                                     ? 'Create New Project'
-                                    : 'Update Total Cash'
+                                    : modalConfig.type === 'editProject'
+                                        ? 'Edit Project'
+                                        : 'Update Total Cash'
                         }
                     >
                         <form onSubmit={handleModalSubmit} className="space-y-4">
-                            {modalConfig.type === 'addProject' && (
+                            {(modalConfig.type === 'addProject' || modalConfig.type === 'editProject') && (
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
                                     <input 
@@ -598,7 +638,7 @@
                             
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editTotalCash' ? 'New Balance' : 'Amount'}
+                                    {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editProject' ? 'Current Balance' : modalConfig.type === 'editTotalCash' ? 'New Balance' : 'Amount'}
                                 </label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -616,12 +656,31 @@
                                 </div>
                             </div>
 
+                            {(modalConfig.type === 'addProject' || modalConfig.type === 'editProject') && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Target Goal</label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <span className="text-gray-500 sm:text-sm">$</span>
+                                        </div>
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={inputTarget} 
+                                            onChange={(e) => setInputTarget(e.target.value)}
+                                            className="w-full pl-7 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="flex justify-end space-x-3 mt-6">
                                 <button type="button" onClick={closeModal} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md">
                                     Cancel
                                 </button>
                                 <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-700 hover:bg-green-800 rounded-md">
-                                    {modalConfig.type === 'addProject' ? 'Create Project' : modalConfig.type === 'editTotalCash' ? 'Update Balance' : 'Confirm Transaction'}
+                                    {modalConfig.type === 'addProject' ? 'Create Project' : modalConfig.type === 'editProject' ? 'Save Changes' : modalConfig.type === 'editTotalCash' ? 'Update Balance' : 'Confirm Transaction'}
                                 </button>
                             </div>
                         </form>
@@ -630,7 +689,7 @@
             );
         }
 
-        function ProjectCard({ project, onTransact, onDelete, theme }) {
+        function ProjectCard({ project, onTransact, onEdit, onDelete, theme }) {
             const isDark = theme === 'dark';
             return (
                 <div className={`rounded-lg shadow-sm border p-6 relative transition-all hover:shadow-md ${isDark ? 'bg-green-800 border-green-700 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
@@ -647,14 +706,17 @@
                                 <p className={`text-xs ${isDark ? 'text-green-300' : 'text-gray-500'}`}>{project.type === 'special' ? 'Restricted Fund' : 'General Project'}</p>
                             </div>
                         </div>
-                        <button type="button" onClick={() => { if(window.confirm('Delete this project?')) onDelete(project.id); }} className={`text-xs p-1 rounded hover:bg-opacity-20 ${isDark ? 'hover:bg-red-500 text-green-300' : 'hover:bg-red-100 text-gray-400'}`}><div className="h-4 w-4"><Icons.Trash2 /></div></button>
+                        <div className="flex space-x-1">
+                            <button type="button" onClick={() => onEdit(project)} className={`text-xs p-1 rounded hover:bg-opacity-20 ${isDark ? 'hover:bg-green-500 text-green-300' : 'hover:bg-gray-200 text-gray-400'}`}><div className="h-4 w-4"><Icons.Pencil /></div></button>
+                            <button type="button" onClick={() => { if(window.confirm('Delete this project?')) onDelete(project.id); }} className={`text-xs p-1 rounded hover:bg-opacity-20 ${isDark ? 'hover:bg-red-500 text-green-300' : 'hover:bg-red-100 text-gray-400'}`}><div className="h-4 w-4"><Icons.Trash2 /></div></button>
+                        </div>
                     </div>
                     <div className="mb-6">
                         <div className="flex justify-between items-end mb-1">
                             <div className={`text-3xl font-bold ${isDark ? 'text-yellow-400' : 'text-gray-800'}`}>${(project.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                             {project.target && <div className={`text-xs ${isDark ? 'text-green-300' : 'text-gray-500'}`}>Target: ${project.target.toLocaleString()}</div>}
                         </div>
-                        {project.target && <div className={`w-full h-2 rounded-full mt-2 ${isDark ? 'bg-green-900' : 'bg-gray-100'}`}><div className={`h-full rounded-full ${isDark ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(((project.balance || 0) / project.target) * 100, 100)}%` }}></div></div>}
+                        {project.target > 0 && <div className={`w-full h-2 rounded-full mt-2 ${isDark ? 'bg-green-900' : 'bg-gray-100'}`}><div className={`h-full rounded-full ${isDark ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(((project.balance || 0) / project.target) * 100, 100)}%` }}></div></div>}
                     </div>
                     <div className="flex space-x-3 border-t pt-4 border-opacity-20 border-gray-400">
                         <button type="button" onClick={() => onTransact(project, 'add')} className={`flex-1 py-2 rounded text-sm font-medium flex items-center justify-center space-x-2 transition-colors ${isDark ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-blue-50 hover:bg-blue-100 text-blue-700'}`}><div className="h-4 w-4"><Icons.TrendingUp /></div><span>Add Donation</span></button>
