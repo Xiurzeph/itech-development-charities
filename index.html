@@ -112,6 +112,7 @@
             const [totalCash, setTotalCash] = React.useState(4899.79);
             const [settingsId, setSettingsId] = React.useState(null);
             const [errorMsg, setErrorMsg] = React.useState(null);
+            const [dbError, setDbError] = React.useState(null);
 
             // Modal States
             const [modalConfig, setModalConfig] = React.useState({ 
@@ -185,7 +186,15 @@
                 const unsubscribeProjects = projectsRef.onSnapshot((snapshot) => {
                     const projList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setProjects(projList);
-                }, (error) => console.error("Projects listener error:", error));
+                    setDbError(null);
+                }, (error) => {
+                    console.error("Projects listener error:", error);
+                    if (error.code === 'permission-denied') {
+                        setDbError("Database Permission Denied. You need to update your Firestore Security Rules to allow access to the 'public' folder.");
+                    } else {
+                        setDbError("Data Error: " + error.message);
+                    }
+                });
 
                 const settingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings');
                 const unsubscribeSettings = settingsRef.onSnapshot((snapshot) => {
@@ -197,7 +206,10 @@
                         // Initialize default if empty
                         settingsRef.add({ totalCash: 4899.79 });
                     }
-                }, (error) => console.error("Settings listener error:", error));
+                }, (error) => {
+                    console.error("Settings listener error:", error);
+                    // Error is caught by the project listener mostly
+                });
 
                 return () => { unsubscribeProjects(); unsubscribeSettings(); };
             }, [user]);
@@ -464,6 +476,12 @@
                             </div>
                         </div>
                     </header>
+
+                    {dbError && (
+                        <div className="bg-red-600 text-white px-4 py-2 text-center text-sm font-bold">
+                            ⚠️ {dbError}
+                        </div>
+                    )}
 
                     <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
                         {/* Top Stats Cards */}
