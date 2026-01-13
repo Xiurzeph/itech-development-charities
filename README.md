@@ -66,7 +66,7 @@ service cloud.firestore {
 
 App Registration: Registered as "ITech Fund Tracker" in the Azure Portal.
 
-Tenant ID: 0b13aea2-8f34-4af4-bd7a-d950720cd00a (Hardcoded in ITechFundTracker.html to enforce organization-only login).
+Tenant ID: Hardcoded in ITechFundTracker.html to enforce organization-only login.
 
 Authentication Flow: Uses OAuth 2.0 Implicit/Hybrid flow via Firebase Auth.
 
