@@ -185,6 +185,7 @@
             // Reconciliation States
             const [isReconMode, setIsReconMode] = React.useState(false);
             const [statementBalance, setStatementBalance] = React.useState('');
+            const [statementEndDate, setStatementEndDate] = React.useState('');
 
             // Helper to replace window.alert / window.confirm
             const showAlert = (title, message) => setMsgBox({ isOpen: true, title, message, isConfirm: false, onConfirm: null });
@@ -331,6 +332,32 @@
             const deleteTransaction = async (transactionId) => {
                 if (!user) return;
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(transactionId).delete();
+            };
+
+            const deleteAllTransactions = async () => {
+                if (!user) return;
+                
+                // Firestore batches are limited to 500 ops. Chunking to be safe.
+                const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
+                const snapshot = await txRef.get();
+                
+                let batch = db.batch();
+                let count = 0;
+                
+                for (const doc of snapshot.docs) {
+                    batch.delete(doc.ref);
+                    count++;
+                    if (count === 450) {
+                        await batch.commit();
+                        batch = db.batch();
+                        count = 0;
+                    }
+                }
+                if (count > 0) {
+                    await batch.commit();
+                }
+                
+                showAlert("Success", "Ledger has been cleared successfully.");
             };
 
             const handleCSVImport = (event) => {
@@ -491,6 +518,17 @@
             // Reconciliation Calculations
             const reconDifference = (parseFloat(statementBalance) || 0) - totalCash;
 
+            // Filter transactions based on statement date
+            const visibleTransactions = React.useMemo(() => {
+                return transactions.filter(tx => {
+                    if (!isReconMode || !statementEndDate) return true;
+                    const txDate = new Date(tx.date);
+                    // Set to end of the selected day for accurate comparison
+                    const endDate = new Date(statementEndDate + 'T23:59:59'); 
+                    return txDate <= endDate;
+                });
+            }, [transactions, isReconMode, statementEndDate]);
+
             if (loading) return (
                 <div className="min-h-screen bg-green-950 flex items-center justify-center text-white">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
@@ -647,6 +685,12 @@
                                         <p className="text-sm text-gray-500 mt-1">Import bank statements and categorize to specific funds.</p>
                                     </div>
                                     <div className="flex space-x-3">
+                                        <button 
+                                            onClick={() => showConfirm('Clear Ledger', 'Are you sure you want to permanently delete ALL imported transactions? This cannot be undone.', deleteAllTransactions)} 
+                                            className="bg-white text-red-600 hover:bg-red-50 border border-red-200 px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2"
+                                        >
+                                            <Icons.Trash2 /> <span className="hidden sm:inline">Delete All</span>
+                                        </button>
                                         <label className="cursor-pointer flex items-center space-x-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
                                             <Icons.Upload /> <span>Import Bank CSV</span>
                                             <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
@@ -680,7 +724,7 @@
                                             </div>
                                             <div className="flex items-center space-x-2 text-sm text-gray-600">
                                                 <Icons.CheckCircle />
-                                                <span>{transactions.filter(t => t.reconciled).length} Reconciled</span>
+                                                <span>{visibleTransactions.filter(t => t.reconciled).length} Reconciled</span>
                                             </div>
                                         </div>
                                     </div>
@@ -688,6 +732,15 @@
                                     {/* Active Reconciliation Dashboard */}
                                     {isReconMode && (
                                         <div className="bg-blue-50 border-b border-blue-100 p-4 flex flex-col sm:flex-row justify-between items-center animate-fade-in shadow-inner">
+                                            <div className="mb-4 sm:mb-0">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Statement End Date</p>
+                                                <input 
+                                                    type="date" 
+                                                    value={statementEndDate} 
+                                                    onChange={(e) => setStatementEndDate(e.target.value)}
+                                                    className="px-3 py-2 text-sm focus:outline-none focus:ring-0 text-blue-900 font-semibold border border-blue-200 rounded shadow-sm bg-white" 
+                                                />
+                                            </div>
                                             <div className="mb-4 sm:mb-0">
                                                 <p className="text-sm text-blue-800 font-medium mb-1">Target Statement Balance</p>
                                                 <div className="flex items-center bg-white border border-blue-200 rounded overflow-hidden shadow-sm">
@@ -728,16 +781,16 @@
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
-                                                {transactions.length === 0 && (
+                                                {visibleTransactions.length === 0 && (
                                                     <tr>
                                                         <td colSpan="6" className="p-12 text-center text-gray-500">
                                                             <div className="flex justify-center mb-3"><Icons.List className="text-gray-300 h-10 w-10" /></div>
                                                             <p>No transactions found.</p>
-                                                            <p className="text-sm mt-1">Import a CSV from your bank to start tracking.</p>
+                                                            <p className="text-sm mt-1">Import a CSV or change the statement date filter.</p>
                                                         </td>
                                                     </tr>
                                                 )}
-                                                {transactions.map(tx => (
+                                                {visibleTransactions.map(tx => (
                                                     <tr key={tx.id} className={`hover:bg-gray-50 transition-colors ${tx.reconciled ? 'bg-green-50/30' : ''}`}>
                                                         <td className="p-4 text-sm text-gray-600">
                                                             {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
