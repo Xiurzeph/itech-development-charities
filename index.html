@@ -372,35 +372,81 @@
                         let importCount = 0;
                         const batchLimit = 500; // Firestore batch limit
 
-                        // Find correct columns (Bank CSVs have varying header names)
+                        // Advanced bank CSV parsing logic
                         const normalizeRow = (row) => {
-                            const getVal = (possibleKeys) => {
-                                const foundKey = Object.keys(row).find(k => k && possibleKeys.some(pk => k.toLowerCase().includes(pk.toLowerCase())));
-                                return foundKey ? row[foundKey] : null;
+                            const keys = Object.keys(row);
+                            
+                            const findKey = (keywords, exclude = []) => {
+                                return keys.find(k => {
+                                    if (!k) return false;
+                                    const lowerK = k.toLowerCase();
+                                    return keywords.some(kw => lowerK.includes(kw)) && !exclude.some(ex => lowerK.includes(ex));
+                                });
                             };
 
-                            const dateStr = getVal(['date', 'posting', 'effective', 'transaction']);
-                            const descStr = getVal(['description', 'payee', 'memo', 'name', 'title']);
+                            // Strict matching to avoid colliding with "Transaction Type"
+                            const dateKey = findKey(['date', 'posting', 'effective']);
+                            const descKey = findKey(['description', 'payee', 'memo', 'title', 'name']);
                             
-                            // Robust number cleaner: strips $, commas, and whitespace before parsing
                             const cleanAmount = (val) => {
-                                if (!val) return NaN;
+                                if (val === null || val === undefined || val === '') return NaN;
                                 if (typeof val === 'number') return val;
-                                const cleaned = val.toString().replace(/[$,\s"']/g, '');
-                                return parseFloat(cleaned);
+                                let str = val.toString().trim();
+                                
+                                // Handle accounting formats (-100 or (100))
+                                const isNegative = str.startsWith('-') || (str.startsWith('(') && str.endsWith(')'));
+                                
+                                // Strip $, commas, spaces, parenthesis, and minus signs to get clean float
+                                const cleaned = str.replace(/[^\d.]/g, ''); 
+                                let num = parseFloat(cleaned);
+                                
+                                if (isNaN(num)) return NaN;
+                                return isNegative ? -num : num;
                             };
 
-                            let amt = cleanAmount(getVal(['amount', 'value', 'transaction amount']));
+                            const dateStr = dateKey ? row[dateKey] : null;
+                            const descStr = descKey ? row[descKey] : 'Unknown Transaction';
+
+                            let amt = NaN;
+
+                            // 1. Check for explicit Credit and Debit columns
+                            const creditKey = findKey(['credit', 'deposit', 'addition']);
+                            const debitKey = findKey(['debit', 'withdrawal', 'subtraction']);
                             
-                            // Fallback if they split credits and debits into two columns
-                            if (isNaN(amt)) {
-                                const credit = cleanAmount(getVal(['credit', 'deposit', 'addition']));
-                                const debit = cleanAmount(getVal(['debit', 'withdrawal', 'subtraction']));
-                                if (!isNaN(credit) && credit !== 0) amt = Math.abs(credit);
-                                else if (!isNaN(debit) && debit !== 0) amt = -Math.abs(debit);
+                            if (creditKey && row[creditKey]) {
+                                let c = cleanAmount(row[creditKey]);
+                                if (!isNaN(c) && c !== 0) amt = Math.abs(c);
+                            } 
+                            if (debitKey && row[debitKey] && isNaN(amt)) {
+                                let d = cleanAmount(row[debitKey]);
+                                if (!isNaN(d) && d !== 0) amt = -Math.abs(d); // Debits are negative
                             }
 
-                            return { date: dateStr, description: descStr || 'Unknown Transaction', amount: amt };
+                            // 2. Fallback to generic Amount column
+                            if (isNaN(amt)) {
+                                const amtKey = findKey(['amount', 'value']);
+                                if (amtKey && row[amtKey]) {
+                                    amt = cleanAmount(row[amtKey]);
+                                    
+                                    // If positive, verify there isn't a Type column changing its meaning
+                                    if (amt > 0) {
+                                        const typeKey = findKey(['type', 'dr/cr', 'category']);
+                                        if (typeKey && row[typeKey]) {
+                                            const tStr = row[typeKey].toString().toLowerCase();
+                                            if (tStr.includes('debit') || tStr.includes('dr') || tStr.includes('withdrawal')) {
+                                                amt = -amt;
+                                            }
+                                        }
+                                        
+                                        // If the amount header itself implies debit (e.g. "Debit Amount")
+                                        if (amtKey.toLowerCase().includes('debit')) {
+                                            amt = -amt;
+                                        }
+                                    }
+                                }
+                            }
+
+                            return { date: dateStr, description: descStr, amount: amt };
                         };
 
                         try {
