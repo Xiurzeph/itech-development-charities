@@ -184,6 +184,7 @@
 
             // Reconciliation States
             const [isReconMode, setIsReconMode] = React.useState(false);
+            const [startingBalance, setStartingBalance] = React.useState('');
             const [statementBalance, setStatementBalance] = React.useState('');
             const [statementEndDate, setStatementEndDate] = React.useState('');
 
@@ -561,9 +562,6 @@
             const totalAllocated = specialProjects.reduce((sum, p) => sum + (parseFloat(p.balance) || 0), 0);
             const totalUnrestricted = totalCash - totalAllocated;
 
-            // Reconciliation Calculations
-            const reconDifference = (parseFloat(statementBalance) || 0) - totalCash;
-
             // Filter transactions based on statement date
             const visibleTransactions = React.useMemo(() => {
                 return transactions.filter(tx => {
@@ -574,6 +572,14 @@
                     return txDate <= endDate;
                 });
             }, [transactions, isReconMode, statementEndDate]);
+
+            // Reconciliation Calculations
+            const reconciledSum = visibleTransactions
+                .filter(tx => tx.reconciled)
+                .reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
+                
+            const clearedBalance = (parseFloat(startingBalance) || 0) + reconciledSum;
+            const reconDifference = (parseFloat(statementBalance) || 0) - clearedBalance;
 
             if (loading) return (
                 <div className="min-h-screen bg-green-950 flex items-center justify-center text-white">
@@ -777,34 +783,47 @@
                                     
                                     {/* Active Reconciliation Dashboard */}
                                     {isReconMode && (
-                                        <div className="bg-blue-50 border-b border-blue-100 p-4 flex flex-col sm:flex-row justify-between items-center animate-fade-in shadow-inner">
-                                            <div className="mb-4 sm:mb-0">
+                                        <div className="bg-blue-50 border-b border-blue-100 p-4 flex flex-col sm:flex-row justify-between items-center animate-fade-in shadow-inner gap-4">
+                                            <div className="flex-1 w-full">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Starting Balance</p>
+                                                <div className="flex items-center bg-white border border-blue-200 rounded overflow-hidden shadow-sm">
+                                                    <span className="text-blue-900 font-bold px-3 py-2 bg-gray-50 border-r border-blue-200">$</span>
+                                                    <input 
+                                                        type="number" 
+                                                        value={startingBalance} 
+                                                        onChange={(e) => setStartingBalance(e.target.value)}
+                                                        className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 w-full">
                                                 <p className="text-sm text-blue-800 font-medium mb-1">Statement End Date</p>
                                                 <input 
                                                     type="date" 
                                                     value={statementEndDate} 
                                                     onChange={(e) => setStatementEndDate(e.target.value)}
-                                                    className="px-3 py-2 text-sm focus:outline-none focus:ring-0 text-blue-900 font-semibold border border-blue-200 rounded shadow-sm bg-white" 
+                                                    className="px-3 py-2 w-full text-sm focus:outline-none focus:ring-0 text-blue-900 font-semibold border border-blue-200 rounded shadow-sm bg-white" 
                                                 />
                                             </div>
-                                            <div className="mb-4 sm:mb-0">
-                                                <p className="text-sm text-blue-800 font-medium mb-1">Target Statement Balance</p>
+                                            <div className="flex-1 w-full">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Closing Balance</p>
                                                 <div className="flex items-center bg-white border border-blue-200 rounded overflow-hidden shadow-sm">
                                                     <span className="text-blue-900 font-bold px-3 py-2 bg-gray-50 border-r border-blue-200">$</span>
                                                     <input 
                                                         type="number" 
                                                         value={statementBalance} 
                                                         onChange={(e) => setStatementBalance(e.target.value)}
-                                                        className="px-3 py-2 text-sm w-32 focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
+                                                        className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
                                                         placeholder="0.00"
                                                     />
                                                 </div>
                                             </div>
-                                            <div className="text-center sm:text-right mb-4 sm:mb-0">
-                                                <p className="text-sm text-blue-800 font-medium mb-1">Current Ledger Balance</p>
-                                                <p className="text-2xl font-bold text-blue-900">${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            <div className="flex-1 w-full text-center sm:text-right">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Cleared Balance</p>
+                                                <p className="text-2xl font-bold text-blue-900">${clearedBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                             </div>
-                                            <div className="text-right">
+                                            <div className="flex-1 w-full text-right">
                                                 <p className="text-sm text-blue-800 font-medium mb-1">Difference</p>
                                                 <div className={`flex items-center justify-end text-2xl font-bold ${reconDifference === 0 && statementBalance !== '' ? 'text-green-600' : 'text-gray-900'}`}>
                                                     <span>${Math.abs(reconDifference).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
