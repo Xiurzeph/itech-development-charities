@@ -182,6 +182,10 @@
             const [inputName, setInputName] = React.useState('');
             const [inputTarget, setInputTarget] = React.useState('');
 
+            // Reconciliation States
+            const [isReconMode, setIsReconMode] = React.useState(false);
+            const [statementBalance, setStatementBalance] = React.useState('');
+
             // Helper to replace window.alert / window.confirm
             const showAlert = (title, message) => setMsgBox({ isOpen: true, title, message, isConfirm: false, onConfirm: null });
             const showConfirm = (title, message, onConfirm) => setMsgBox({ isOpen: true, title, message, isConfirm: true, onConfirm });
@@ -291,7 +295,31 @@
             const toggleReconciliation = async (transaction) => {
                 if (!user) return;
                 const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(transaction.id);
-                await txRef.update({ reconciled: !transaction.reconciled });
+                
+                const isReconciling = !transaction.reconciled;
+                
+                // If reconciling, assigned to a fund, and hasn't been applied yet
+                if (isReconciling && transaction.projectId && !transaction.applied) {
+                    const project = projects.find(p => p.id === transaction.projectId);
+                    if (project) {
+                        await dbUpdateProjectBalance(project.id, project.balance, transaction.amount);
+                        await txRef.update({ reconciled: true, applied: true });
+                        return; // UI will update automatically
+                    }
+                }
+                
+                // If un-reconciling and it WAS applied, reverse it from the fund
+                if (!isReconciling && transaction.projectId && transaction.applied) {
+                    const project = projects.find(p => p.id === transaction.projectId);
+                    if (project) {
+                        await dbUpdateProjectBalance(project.id, project.balance, -transaction.amount);
+                        await txRef.update({ reconciled: false, applied: false });
+                        return;
+                    }
+                }
+
+                // Default toggle if no fund assigned
+                await txRef.update({ reconciled: isReconciling });
             };
 
             const updateTransactionFund = async (transactionId, newProjectId) => {
@@ -449,6 +477,9 @@
             const generalProjects = projects.filter(p => p.type === 'general');
             const totalAllocated = specialProjects.reduce((sum, p) => sum + (parseFloat(p.balance) || 0), 0);
             const totalUnrestricted = totalCash - totalAllocated;
+
+            // Reconciliation Calculations
+            const reconDifference = (parseFloat(statementBalance) || 0) - totalCash;
 
             if (loading) return (
                 <div className="min-h-screen bg-green-950 flex items-center justify-center text-white">
@@ -625,13 +656,54 @@
                                                 <option>All Accounts (Bank)</option>
                                             </select>
                                         </div>
-                                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                                            <Icons.CheckCircle />
-                                            <span>{transactions.filter(t => t.reconciled).length} Reconciled</span>
-                                            <span className="text-gray-300">|</span>
-                                            <span className="font-semibold text-gray-900">{transactions.length} Total</span>
+                                        <div className="flex items-center space-x-4">
+                                            {/* Wave-style Reconciliation Toggle */}
+                                            <div className="flex items-center space-x-3 border-r border-gray-300 pr-4">
+                                                <Icons.LayoutDashboard />
+                                                <span className="text-sm font-medium text-gray-700">Reconciliation</span>
+                                                <button 
+                                                    onClick={() => setIsReconMode(!isReconMode)}
+                                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isReconMode ? 'bg-blue-600' : 'bg-gray-300'}`}
+                                                >
+                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isReconMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center space-x-2 text-sm text-gray-600">
+                                                <Icons.CheckCircle />
+                                                <span>{transactions.filter(t => t.reconciled).length} Reconciled</span>
+                                            </div>
                                         </div>
                                     </div>
+                                    
+                                    {/* Active Reconciliation Dashboard */}
+                                    {isReconMode && (
+                                        <div className="bg-blue-50 border-b border-blue-100 p-4 flex flex-col sm:flex-row justify-between items-center animate-fade-in shadow-inner">
+                                            <div className="mb-4 sm:mb-0">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Target Statement Balance</p>
+                                                <div className="flex items-center bg-white border border-blue-200 rounded overflow-hidden shadow-sm">
+                                                    <span className="text-blue-900 font-bold px-3 py-2 bg-gray-50 border-r border-blue-200">$</span>
+                                                    <input 
+                                                        type="number" 
+                                                        value={statementBalance} 
+                                                        onChange={(e) => setStatementBalance(e.target.value)}
+                                                        className="px-3 py-2 text-sm w-32 focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="text-center sm:text-right mb-4 sm:mb-0">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Current Ledger Balance</p>
+                                                <p className="text-2xl font-bold text-blue-900">${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm text-blue-800 font-medium mb-1">Difference</p>
+                                                <div className={`flex items-center justify-end text-2xl font-bold ${reconDifference === 0 && statementBalance !== '' ? 'text-green-600' : 'text-gray-900'}`}>
+                                                    <span>${Math.abs(reconDifference).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                                    {reconDifference === 0 && statementBalance !== '' && <span className="ml-2 bg-green-100 text-green-600 rounded-full p-1"><Icons.Check /></span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                     
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse whitespace-nowrap">
@@ -667,7 +739,8 @@
                                                             <select 
                                                                 value={tx.projectId || ''} 
                                                                 onChange={(e) => updateTransactionFund(tx.id, e.target.value)}
-                                                                className={`w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 py-1.5 px-2 cursor-pointer ${tx.projectId ? 'bg-blue-50 text-blue-800 border-blue-200 font-medium' : 'bg-gray-50 text-gray-500'}`}
+                                                                disabled={tx.applied}
+                                                                className={`w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 py-1.5 px-2 cursor-pointer ${tx.applied ? 'opacity-50 cursor-not-allowed ' : ''}${tx.projectId ? 'bg-blue-50 text-blue-800 border-blue-200 font-medium' : 'bg-gray-50 text-gray-500'}`}
                                                             >
                                                                 <option value="">Uncategorized</option>
                                                                 <optgroup label="Restricted Funds">
@@ -684,10 +757,10 @@
                                                         <td className="p-4 text-center">
                                                             <button 
                                                                 onClick={() => toggleReconciliation(tx)}
-                                                                className={`p-1 rounded-full transition-colors ${tx.reconciled ? 'text-green-500 hover:text-green-600 bg-green-100' : 'text-gray-300 hover:text-gray-500'}`}
-                                                                title="Toggle Reconciliation Status"
+                                                                className={`p-1 rounded-full border transition-all ${tx.reconciled ? 'text-white bg-blue-600 border-blue-600 hover:bg-blue-700' : 'text-gray-300 border-gray-300 hover:border-gray-500 hover:text-gray-500'}`}
+                                                                title={tx.applied ? "Un-reconcile and Reverse Balance" : "Reconcile and Apply Balance"}
                                                             >
-                                                                {tx.reconciled ? <Icons.CheckCircle /> : <Icons.Circle />}
+                                                                <Icons.Check />
                                                             </button>
                                                         </td>
                                                         <td className="p-4 text-center">
