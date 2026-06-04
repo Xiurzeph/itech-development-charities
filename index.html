@@ -348,19 +348,29 @@
                         // Find correct columns (Bank CSVs have varying header names)
                         const normalizeRow = (row) => {
                             const getVal = (possibleKeys) => {
-                                const foundKey = Object.keys(row).find(k => possibleKeys.some(pk => k.toLowerCase().includes(pk.toLowerCase())));
+                                const foundKey = Object.keys(row).find(k => k && possibleKeys.some(pk => k.toLowerCase().includes(pk.toLowerCase())));
                                 return foundKey ? row[foundKey] : null;
                             };
 
-                            const dateStr = getVal(['date', 'posting', 'effective']);
-                            const descStr = getVal(['description', 'payee', 'memo', 'name']);
+                            const dateStr = getVal(['date', 'posting', 'effective', 'transaction']);
+                            const descStr = getVal(['description', 'payee', 'memo', 'name', 'title']);
                             
-                            let amt = parseFloat(getVal(['amount']));
+                            // Robust number cleaner: strips $, commas, and whitespace before parsing
+                            const cleanAmount = (val) => {
+                                if (!val) return NaN;
+                                if (typeof val === 'number') return val;
+                                const cleaned = val.toString().replace(/[$,\s"']/g, '');
+                                return parseFloat(cleaned);
+                            };
+
+                            let amt = cleanAmount(getVal(['amount', 'value', 'transaction amount']));
+                            
+                            // Fallback if they split credits and debits into two columns
                             if (isNaN(amt)) {
-                                const credit = parseFloat(getVal(['credit', 'deposit']));
-                                const debit = parseFloat(getVal(['debit', 'withdrawal']));
-                                if (!isNaN(credit)) amt = credit;
-                                else if (!isNaN(debit)) amt = -Math.abs(debit);
+                                const credit = cleanAmount(getVal(['credit', 'deposit', 'addition']));
+                                const debit = cleanAmount(getVal(['debit', 'withdrawal', 'subtraction']));
+                                if (!isNaN(credit) && credit !== 0) amt = Math.abs(credit);
+                                else if (!isNaN(debit) && debit !== 0) amt = -Math.abs(debit);
                             }
 
                             return { date: dateStr, description: descStr || 'Unknown Transaction', amount: amt };
