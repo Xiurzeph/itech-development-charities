@@ -82,7 +82,8 @@
             CheckCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>,
             Circle: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>,
             Check: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>,
-            Filter: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filter: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>,
+            Sparkles: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
         };
 
         // --- Configuration Handling ---
@@ -187,6 +188,7 @@
             const [startingBalance, setStartingBalance] = React.useState('');
             const [statementBalance, setStatementBalance] = React.useState('');
             const [statementEndDate, setStatementEndDate] = React.useState('');
+            const [isCategorizing, setIsCategorizing] = React.useState(false);
 
             // Helper to replace window.alert / window.confirm
             const showAlert = (title, message) => setMsgBox({ isOpen: true, title, message, isConfirm: false, onConfirm: null });
@@ -336,29 +338,279 @@
             };
 
             const deleteAllTransactions = async () => {
-                if (!user) return;
-                
-                // Firestore batches are limited to 500 ops. Chunking to be safe.
-                const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
-                const snapshot = await txRef.get();
-                
-                let batch = db.batch();
-                let count = 0;
-                
-                for (const doc of snapshot.docs) {
-                    batch.delete(doc.ref);
-                    count++;
-                    if (count === 450) {
-                        await batch.commit();
-                        batch = db.batch();
-                        count = 0;
-                    }
-                }
-                if (count > 0) {
+            if (!user) return;
+            
+            // Firestore batches are limited to 500 ops. Chunking to be safe.
+            const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
+            const snapshot = await txRef.get();
+            
+            let batch = db.batch();
+            let count = 0;
+            
+            for (const doc of snapshot.docs) {
+                batch.delete(doc.ref);
+                count++;
+                if (count === 450) {
                     await batch.commit();
+                    batch = db.batch();
+                    count = 0;
                 }
+            }
+            if (count > 0) {
+                await batch.commit();
+            }
+            
+            showAlert("Success", "Ledger has been cleared successfully.");
+        };
+
+        const handlePrintReport = () => {
+            const printWindow = window.open('', '', 'width=800,height=600');
+            const date = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            
+            // Calculate totals from transactions
+            const totalDonations = transactions
+                .filter(tx => tx.amount > 0 && tx.reconciled)
+                .reduce((sum, tx) => sum + tx.amount, 0);
                 
-                showAlert("Success", "Ledger has been cleared successfully.");
+            const totalExpenses = transactions
+                .filter(tx => tx.amount < 0 && tx.reconciled)
+                .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+            // Group transactions by project for detailed breakdown
+            const transactionsByProject = {};
+            projects.forEach(p => {
+                transactionsByProject[p.id] = {
+                    name: p.name,
+                    donations: 0,
+                    expenses: 0,
+                    transactions: transactions.filter(tx => tx.projectId === p.id && tx.reconciled)
+                };
+                
+                transactionsByProject[p.id].transactions.forEach(tx => {
+                    if (tx.amount > 0) transactionsByProject[p.id].donations += tx.amount;
+                    else transactionsByProject[p.id].expenses += Math.abs(tx.amount);
+                });
+            });
+
+            // Calculate Uncategorized/General totals
+            const generalTransactions = transactions.filter(tx => !tx.projectId && tx.reconciled);
+            const generalDonations = generalTransactions.filter(tx => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0);
+            const generalExpenses = generalTransactions.filter(tx => tx.amount < 0).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+            
+            const html = `
+            <html>
+                <head>
+                <title>ITech Charity Financial Report - ${date}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+                    .header-container { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #eab308; padding-bottom: 20px; margin-bottom: 30px; }
+                    .logo { max-height: 80px; }
+                    h1 { color: #14532d; margin: 0; font-size: 24px; }
+                    .meta { color: #666; font-size: 14px; margin-top: 5px; }
+                    h2 { color: #14532d; margin-top: 30px; font-size: 18px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+                    h3 { color: #854d0e; margin-top: 0; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+                    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                    th { background-color: #f3f4f6; color: #111; font-weight: bold; }
+                    .amount-col { text-align: right; font-family: monospace; font-size: 1.1em; }
+                    .total-row { font-weight: bold; background-color: #f0fdf4; }
+                    .summary-box { border: 2px solid #14532d; padding: 20px; margin-bottom: 30px; background-color: #fdfce7; border-radius: 8px; }
+                    .summary-item { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #ccc; padding-bottom: 4px; }
+                    .summary-item:last-child { border-bottom: none; }
+                    .highlight { font-weight: bold; color: #14532d; }
+                    .expense { color: #dc2626; }
+                    .income { color: #16a34a; }
+                    .footer { margin-top: 50px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #eee; padding-top: 20px; }
+                </style>
+                </head>
+                <body>
+                <div class="header-container">
+                    <img src="idc-logo.png" alt="ITech Charities Logo" class="logo" onerror="this.src='https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'">
+                    <div class="report-title">
+                        <h1>Monthly Financial Report</h1>
+                        <div class="meta">Generated: ${new Date().toLocaleDateString()}</div>
+                    </div>
+                </div>
+                
+                <div class="summary-box">
+                    <h3>Financial Summary</h3>
+                    <div class="summary-item">
+                        <span>Total Cash on Hand (Bank Balance)</span>
+                        <span class="highlight">$${totalCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span>Restricted Funds (Special Projects)</span>
+                        <span style="color: #b45309;">($${totalAllocated.toLocaleString('en-US', { minimumFractionDigits: 2 })})</span>
+                    </div>
+                    <div class="summary-item" style="margin-top: 10px; border-top: 2px solid #14532d; padding-top: 10px; font-size: 1.1em;">
+                        <span>Available Operating Funds</span>
+                        <span class="highlight">$${totalUnrestricted.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                </div>
+
+                <h2>Transaction Summary (Reconciled)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category / Fund</th>
+                            <th class="amount-col">Donations In</th>
+                            <th class="amount-col">Expenses Out</th>
+                            <th class="amount-col">Net Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${Object.values(transactionsByProject).map(data => {
+                            if (data.donations === 0 && data.expenses === 0 && data.transactions.length === 0) return '';
+                            return `
+                                <tr>
+                                    <td>${data.name}</td>
+                                    <td class="amount-col income">$${data.donations.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td class="amount-col expense">$${data.expenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td class="amount-col font-bold ${(data.donations - data.expenses) >= 0 ? 'income' : 'expense'}">
+                                        ${(data.donations - data.expenses) >= 0 ? '+' : ''}$${(data.donations - data.expenses).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                        <tr>
+                            <td><em>General / Uncategorized</em></td>
+                            <td class="amount-col income">$${generalDonations.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td class="amount-col expense">$${generalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td class="amount-col font-bold ${(generalDonations - generalExpenses) >= 0 ? 'income' : 'expense'}">
+                                ${(generalDonations - generalExpenses) >= 0 ? '+' : ''}$${(generalDonations - generalExpenses).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                        </tr>
+                        <tr class="total-row">
+                            <td>Total Reconciled Activity</td>
+                            <td class="amount-col income">$${totalDonations.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td class="amount-col expense">$${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                            <td class="amount-col font-bold ${(totalDonations - totalExpenses) >= 0 ? 'income' : 'expense'}">
+                                ${(totalDonations - totalExpenses) >= 0 ? '+' : ''}$${(totalDonations - totalExpenses).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>Current Balances by Fund</h2>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Project Name</th>
+                        <th>Type</th>
+                        <th class="amount-col">Current Balance</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    ${specialProjects.map(p => `
+                        <tr>
+                        <td>${p.name}</td>
+                        <td>Restricted</td>
+                        <td class="amount-col">$${p.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                    `).join('')}
+                    ${generalProjects.map(p => `
+                        <tr>
+                        <td>${p.name}</td>
+                        <td>General</td>
+                        <td class="amount-col">$${p.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+                
+                <div class="footer">
+                    Generated by ITech Financial Ledger System for Internal Use.
+                </div>
+                </body>
+            </html>
+            `;
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); }, 250);
+        };
+
+        const handleAutoCategorize = async () => {
+                const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
+                if (uncategorized.length === 0) {
+                    showAlert("All Caught Up", "There are no uncategorized transactions to process.");
+                    return;
+                }
+
+                setIsCategorizing(true);
+                try {
+                    const availableFunds = projects.map(p => ({ id: p.id, name: p.name, type: p.type }));
+                    const pendingTx = uncategorized.map(tx => ({ id: tx.id, description: tx.description, amount: tx.amount }));
+
+                    const systemPrompt = "You are an AI bookkeeping assistant for ITech Development Charities. Map the provided transactions to the 'Available Funds'. Consider their core services (e.g., Solar Training, Kiosk Installation, CompTIA Test Center, Youth Programs, IT Support). If a transaction description matches a fund's purpose, return its ID. For generic deposits or software (e.g., 'Zeffy', 'PayPal', 'DEPOSIT'), map them to a 'General' or 'Operating' fund if available. If no suitable match is found, return an empty string for the suggestedProjectId.";
+
+                    const payload = {
+                        contents: [{
+                            role: "user",
+                            parts: [{ text: `Available Funds: ${JSON.stringify(availableFunds)}\n\nTransactions to categorize: ${JSON.stringify(pendingTx)}` }]
+                        }],
+                        systemInstruction: {
+                            parts: [{ text: systemPrompt }]
+                        },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        "transactionId": { type: "STRING" },
+                                        "suggestedProjectId": { type: "STRING" }
+                                    },
+                                    required: ["transactionId", "suggestedProjectId"]
+                                }
+                            }
+                        }
+                    };
+
+                    const apiKey = ""; // Automatically injected by the canvas environment
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates.length > 0) {
+                        const jsonText = result.candidates[0].content.parts[0].text;
+                        const mappings = JSON.parse(jsonText);
+                        
+                        const batch = db.batch();
+                        let updateCount = 0;
+                        
+                        mappings.forEach(mapping => {
+                            if (mapping.suggestedProjectId && mapping.suggestedProjectId.trim() !== "") {
+                                if (projects.some(p => p.id === mapping.suggestedProjectId)) {
+                                    const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(mapping.transactionId);
+                                    batch.update(txRef, { projectId: mapping.suggestedProjectId });
+                                    updateCount++;
+                                }
+                            }
+                        });
+
+                        if (updateCount > 0) {
+                            await batch.commit();
+                            showAlert("AI Categorization Complete", `Successfully matched ${updateCount} transactions to funds.`);
+                        } else {
+                            showAlert("AI Categorization Complete", "Could not find confident matches for the remaining transactions. Please categorize them manually.");
+                        }
+                    } else {
+                        throw new Error("Invalid response from AI");
+                    }
+                } catch (error) {
+                    console.error("Categorization Error:", error);
+                    showAlert("AI Error", "The AI categorization service is currently unavailable or encountered an error. Please try again.");
+                } finally {
+                    setIsCategorizing(false);
+                }
             };
 
             const handleCSVImport = (event) => {
@@ -608,7 +860,7 @@
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
                             <div className="flex items-center space-x-4">
                                 <div className="hidden sm:block h-12 w-12 bg-white rounded-lg p-1 flex items-center justify-center">
-                                    <Icons.Wallet className="text-green-800" />
+                                    <img src="idc-logo.png" alt="ITech Logo" className="h-full w-full object-contain" onError={(e) => { e.target.onerror = null; e.target.src = 'https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'; }} />
                                 </div>
                                 <div>
                                     <h1 className="text-xl font-bold tracking-tight text-white">ITech Financial Ledger</h1>
@@ -629,6 +881,9 @@
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">
+                                <button type="button" onClick={handlePrintReport} className="flex items-center space-x-2 bg-yellow-500 hover:bg-yellow-400 text-green-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                                    <Icons.Printer /> <span className="hidden sm:inline">Print Report</span>
+                                </button>
                                 <div className="text-right hidden sm:block border-l border-green-700/50 pl-4">
                                     <p className="text-xs text-green-200 uppercase tracking-wide">Logged In</p>
                                     <div className="flex items-center space-x-2">
@@ -742,6 +997,18 @@
                                             className="bg-white text-red-600 hover:bg-red-50 border border-red-200 px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2"
                                         >
                                             <Icons.Trash2 /> <span className="hidden sm:inline">Delete All</span>
+                                        </button>
+                                        <button 
+                                            onClick={handleAutoCategorize} 
+                                            disabled={isCategorizing}
+                                            className={`bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2 ${isCategorizing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            {isCategorizing ? (
+                                                <div className="animate-spin h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
+                                            ) : (
+                                                <Icons.Sparkles />
+                                            )}
+                                            <span className="hidden sm:inline">{isCategorizing ? 'Analyzing...' : 'Auto-Categorize'}</span>
                                         </button>
                                         <label className="cursor-pointer flex items-center space-x-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
                                             <Icons.Upload /> <span>Import Bank CSV</span>
