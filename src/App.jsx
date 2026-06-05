@@ -284,14 +284,24 @@ export default function App() {
 
     const deleteAllTransactions = async () => {
         if (!user) return;
-        const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
-        const snapshot = await txRef.get();
+        
+        // Grab transactions matching the current Year Filter (or all if 'All')
+        const txToDelete = transactions.filter(tx => {
+            if (filterYear === 'All') return true;
+            return tx.date ? new Date(tx.date).getFullYear().toString() === filterYear : false;
+        });
+
+        if (txToDelete.length === 0) {
+            showAlert("Ledger Empty", `There are no transactions to delete for ${filterYear === 'All' ? 'the entire ledger' : filterYear}.`);
+            return;
+        }
         
         let batch = db.batch();
         let count = 0;
         
-        for (const doc of snapshot.docs) {
-            batch.delete(doc.ref);
+        for (const tx of txToDelete) {
+            const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(tx.id);
+            batch.delete(txRef);
             count++;
             if (count === 450) {
                 await batch.commit();
@@ -303,7 +313,7 @@ export default function App() {
             await batch.commit();
         }
         
-        showAlert("Success", "Ledger has been cleared successfully.");
+        showAlert("Success", `Ledger has been cleared for ${filterYear === 'All' ? 'all years' : filterYear}. Deleted ${txToDelete.length} transactions.`);
     };
 
     const openEditTransactionModal = (tx) => {
@@ -1029,7 +1039,7 @@ export default function App() {
                             </div>
                             <div className="flex space-x-3">
                                 <button 
-                                    onClick={() => showConfirm('Clear Ledger', 'Are you sure you want to permanently delete ALL imported transactions? This cannot be undone.', deleteAllTransactions)} 
+                                    onClick={() => showConfirm('Clear Ledger', `Are you sure you want to permanently delete ALL imported transactions for ${filterYear === 'All' ? 'the entire ledger' : filterYear}? This cannot be undone.`, deleteAllTransactions)} 
                                     className="bg-white text-red-600 hover:bg-red-50 border border-red-200 px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2"
                                 >
                                     <Icons.Trash2 /> <span className="hidden sm:inline">Delete All</span>
