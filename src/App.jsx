@@ -454,24 +454,37 @@ export default function App() {
     };
 
     const handleAutoCategorize = async () => {
-        const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
-        if (uncategorized.length === 0) {
-            showAlert("All Caught Up", "There are no uncategorized transactions to process.");
-            return;
+    // 1. Filter for transactions that need categorization
+    const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
+    
+    // 2. Stop the process if there is nothing left to categorize
+    if (uncategorized.length === 0) {
+        showAlert("All Caught Up", "There are no uncategorized transactions to process.");
+        return;
+    }
+
+    setIsCategorizing(true);
+    try {
+        let apiKey = window?.env?.VITE_GEMINI_API_KEY || localStorage.getItem('ITECH_GEMINI_KEY');
+
+        if (!apiKey) {
+            apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
+            if (!apiKey) {
+                setIsCategorizing(false);
+                return; 
+            }
+            localStorage.setItem('ITECH_GEMINI_KEY', apiKey.trim());
         }
 
-        setIsCategorizing(true);
-        try {
-            let apiKey = window?.env?.VITE_GEMINI_API_KEY || localStorage.getItem('ITECH_GEMINI_KEY');
+        // 3. Build your prompt using ONLY the uncategorized array
+        const promptText = `
+            You are an expert financial accountant for a non-profit.
+            Categorize the following transactions into one of these specific project IDs:
+            ${data.projects.filter(p => p.id !== 'main').map(p => `- ${p.id} (${p.name})`).join('\n')}
 
-            if (!apiKey) {
-                apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
-                if (!apiKey) {
-                    setIsCategorizing(false);
-                    return; 
-                }
-                localStorage.setItem('ITECH_GEMINI_KEY', apiKey.trim());
-            }
+            Transactions to categorize:
+            ${uncategorized.map(t => `ID: ${t.id} | Date: ${t.date} | Desc: ${t.description} | Amount: ${t.amount} | Type: ${t.type} | Bank Category: ${t.category}`).join('\n')}
+        `;
 
             const availableFunds = projects.map(p => ({ id: p.id, name: p.name, type: p.type }));
             const pendingTx = uncategorized.map(tx => ({ id: tx.id, description: tx.description, amount: tx.amount }));
