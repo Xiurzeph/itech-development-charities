@@ -135,8 +135,12 @@ export default function App() {
     const [statementBalance, setStatementBalance] = useState('');
     const [statementStartDate, setStatementStartDate] = useState('');
     const [statementEndDate, setStatementEndDate] = useState('');
-    const [isCategorizing, setIsCategorizing] = useState(false);
     const [filterYear, setFilterYear] = useState('All');
+    
+    // AI & Import Loading States
+    const [isCategorizing, setIsCategorizing] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState(0);
 
     // Helper to replace window.alert / window.confirm
     const showAlert = (title, message) => setMsgBox({ isOpen: true, title, message, isConfirm: false, onConfirm: null });
@@ -355,13 +359,19 @@ export default function App() {
         const printWindow = window.open('', '', 'width=800,height=600');
         const date = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         
-        const totalDonations = transactions.filter(tx => tx.amount > 0 && tx.reconciled).reduce((sum, tx) => sum + tx.amount, 0);
-        const totalExpenses = transactions.filter(tx => tx.amount < 0 && tx.reconciled).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+        // --- NEW: Filter by year ---
+        const reportTransactions = transactions.filter(tx => {
+            if (filterYear === 'All') return true;
+            return tx.date ? new Date(tx.date).getFullYear().toString() === filterYear : false;
+        });
+
+        const totalDonations = reportTransactions.filter(tx => tx.amount > 0 && tx.reconciled).reduce((sum, tx) => sum + tx.amount, 0);
+        const totalExpenses = reportTransactions.filter(tx => tx.amount < 0 && tx.reconciled).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
         const transactionsByProject = {};
         projects.forEach(p => {
             transactionsByProject[p.id] = {
-                name: p.name, donations: 0, expenses: 0, transactions: transactions.filter(tx => tx.projectId === p.id && tx.reconciled)
+                name: p.name, donations: 0, expenses: 0, transactions: reportTransactions.filter(tx => tx.projectId === p.id && tx.reconciled)
             };
             transactionsByProject[p.id].transactions.forEach(tx => {
                 if (tx.amount > 0) transactionsByProject[p.id].donations += tx.amount;
@@ -369,7 +379,7 @@ export default function App() {
             });
         });
 
-        const generalTransactions = transactions.filter(tx => !tx.projectId && tx.reconciled);
+        const generalTransactions = reportTransactions.filter(tx => !tx.projectId && tx.reconciled);
         const generalDonations = generalTransactions.filter(tx => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0);
         const generalExpenses = generalTransactions.filter(tx => tx.amount < 0).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
         
@@ -402,7 +412,7 @@ export default function App() {
             <div class="header-container">
                 <img src="./idc-logo.png" alt="ITech Charities Logo" class="logo" onerror="this.src='https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'">
                 <div class="report-title">
-                    <h1>Monthly Financial Report</h1>
+                    <h1>Financial Report (${filterYear === 'All' ? 'All Time' : filterYear})</h1>
                     <div class="meta">Generated: ${new Date().toLocaleDateString()}</div>
                 </div>
             </div>
@@ -504,37 +514,28 @@ export default function App() {
     };
 
     const handleAutoCategorize = async () => {
-    // 1. Filter for transactions that need categorization
-    const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
-    
-    // 2. Stop the process if there is nothing left to categorize
-    if (uncategorized.length === 0) {
-        showAlert("All Caught Up", "There are no uncategorized transactions to process.");
-        return;
-    }
-
-    setIsCategorizing(true);
-    try {
-        let apiKey = window?.env?.VITE_GEMINI_API_KEY || localStorage.getItem('ITECH_GEMINI_KEY');
-
-        if (!apiKey) {
-            apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
-            if (!apiKey) {
-                setIsCategorizing(false);
-                return; 
-            }
-            localStorage.setItem('ITECH_GEMINI_KEY', apiKey.trim());
+        // 1. Filter for transactions that need categorization
+        // Apply same year/date visibility logic so AI only categorizes what you see
+        const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
+        
+        // 2. Stop the process if there is nothing left to categorize
+        if (uncategorized.length === 0) {
+            showAlert("All Caught Up", "There are no uncategorized transactions currently visible to process.");
+            return;
         }
 
-        // 3. Build your prompt using ONLY the uncategorized array
-        const promptText = `
-            You are an expert financial accountant for a non-profit.
-            Categorize the following transactions into one of these specific project IDs:
-            ${projects.filter(p => p.id !== 'main').map(p => `- ${p.id} (${p.name})`).join('\n')}
+        setIsCategorizing(true);
+        try {
+            let apiKey = window?.env?.VITE_GEMINI_API_KEY || localStorage.getItem('ITECH_GEMINI_KEY');
 
-            Transactions to categorize:
-            ${uncategorized.map(t => `ID: ${t.id} | Date: ${t.date} | Desc: ${t.description} | Amount: ${t.amount} | Type: ${t.type} | Bank Category: ${t.category}`).join('\n')}
-        `;
+            if (!apiKey) {
+                apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
+                if (!apiKey) {
+                    setIsCategorizing(false);
+                    return; 
+                }
+                localStorage.setItem('ITECH_GEMINI_KEY', apiKey.trim());
+            }
 
             const availableFunds = projects.map(p => ({ id: p.id, name: p.name, type: p.type }));
             const pendingTx = uncategorized.map(tx => ({ id: tx.id, description: tx.description, amount: tx.amount }));
@@ -622,11 +623,15 @@ export default function App() {
         const file = event.target.files[0];
         if (!file) return;
 
+        setIsImporting(true);
+        setImportProgress(0);
+
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
             complete: async (results) => {
                 const data = results.data;
+                const totalRows = data.length;
                 let importCount = 0;
 
                 const normalizeRow = (row) => {
@@ -701,37 +706,48 @@ export default function App() {
 
                 try {
                     const txCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
+                    let processed = 0;
                     
-                    for (const rawRow of data) {
+                    for (let i = 0; i < totalRows; i++) {
+                        const rawRow = data[i];
                         const { date, description, amount, category } = normalizeRow(rawRow);
                         
                         if (date && !isNaN(amount)) {
                             const dateObj = new Date(date);
-                            if (isNaN(dateObj.getTime())) continue; 
-                            
-                            const rawIdString = `${dateObj.toISOString().split('T')[0]}_${amount}_${description.substring(0, 15)}`;
-                            const safeId = rawIdString.replace(/[^a-zA-Z0-9_-]/g, ''); 
+                            if (!isNaN(dateObj.getTime())) {
+                                const rawIdString = `${dateObj.toISOString().split('T')[0]}_${amount}_${description.substring(0, 15)}`;
+                                const safeId = rawIdString.replace(/[^a-zA-Z0-9_-]/g, ''); 
 
-                            const docRef = txCollection.doc(safeId);
-                            const snap = await docRef.get();
-                            
-                            if (!snap.exists) {
-                                await docRef.set({
-                                    date: dateObj.toISOString(),
-                                    description: description,
-                                    amount: amount,
-                                    reconciled: false,
-                                    projectId: '',
-                                    category: category,
-                                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                                });
-                                importCount++;
+                                const docRef = txCollection.doc(safeId);
+                                const snap = await docRef.get();
+                                
+                                if (!snap.exists) {
+                                    await docRef.set({
+                                        date: dateObj.toISOString(),
+                                        description: description,
+                                        amount: amount,
+                                        reconciled: false,
+                                        projectId: '',
+                                        category: category,
+                                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                    });
+                                    importCount++;
+                                }
                             }
                         }
+                        
+                        processed++;
+                        // Update progress bar
+                        if (processed % 5 === 0 || processed === totalRows) {
+                            setImportProgress(Math.round((processed / totalRows) * 100));
+                        }
                     }
+                    
+                    setIsImporting(false);
                     event.target.value = '';
                     showAlert("Import Successful", `Successfully imported ${importCount} new transactions. Duplicates were skipped.`);
                 } catch (err) {
+                    setIsImporting(false);
                     console.error("Import Error", err);
                     showAlert("Import Failed", "An error occurred while importing transactions.");
                 }
@@ -1251,6 +1267,21 @@ export default function App() {
                     </div>
                 )}
             </main>
+
+            {/* FULL SCREEN IMPORT LOADING OVERLAY */}
+            {isImporting && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">Importing Transactions</h3>
+                        <p className="text-gray-500 text-sm mb-4">Please do not close this window.</p>
+                        <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${importProgress}%` }}></div>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700 mt-2">{importProgress}%</p>
+                    </div>
+                </div>
+            )}
 
             <Modal isOpen={modalConfig.isOpen} onClose={closeModal} title={modalConfig.type === 'transaction' ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income') : modalConfig.type === 'addProject' ? 'Create New Fund' : modalConfig.type === 'editProject' ? 'Edit Fund' : modalConfig.type === 'editTransaction' ? 'Edit Transaction' : modalConfig.type === 'addTransaction' ? 'Add Manual Transaction' : 'Update Total Cash'}>
                 <form onSubmit={handleModalSubmit} className="space-y-4">
