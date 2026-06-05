@@ -502,7 +502,7 @@ export default function App() {
                 }
             };
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -579,6 +579,7 @@ export default function App() {
 
                     const dateKey = findKey(['date', 'posting', 'effective']);
                     const descKey = findKey(['description', 'payee', 'memo', 'title', 'name']);
+                    const categoryKey = findKey(['category', 'class', 'group']);
                     
                     const cleanAmount = (val) => {
                         if (val === null || val === undefined || val === '') return NaN;
@@ -627,14 +628,19 @@ export default function App() {
                         }
                     }
 
-                    return { date: dateStr, description: descStr, amount: amt };
+                    return { 
+                        date: dateStr, 
+                        description: descStr, 
+                        amount: amt,
+                        category: categoryKey && row[categoryKey] ? row[categoryKey].trim() : 'Uncategorized' 
+                    };
                 };
 
                 try {
                     const txCollection = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions');
                     
                     for (const rawRow of data) {
-                        const { date, description, amount } = normalizeRow(rawRow);
+                        const { date, description, amount, category } = normalizeRow(rawRow);
                         
                         if (date && !isNaN(amount)) {
                             const dateObj = new Date(date);
@@ -653,7 +659,7 @@ export default function App() {
                                     amount: amount,
                                     reconciled: false,
                                     projectId: '',
-                                    category: 'Uncategorized',
+                                    category: category,
                                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                                 });
                                 importCount++;
@@ -993,7 +999,7 @@ export default function App() {
                                                 type="number" 
                                                 value={statementBalance} 
                                                 onChange={(e) => setStatementBalance(e.target.value)}
-                                                className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
+                                                        className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -1039,8 +1045,13 @@ export default function App() {
                                                 <td className="p-4 text-sm text-gray-600">
                                                     {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                                 </td>
-                                                <td className="p-4 text-sm font-medium text-gray-900 truncate max-w-xs" title={tx.description}>
-                                                    {tx.description}
+                                                <td className="p-4 max-w-xs truncate">
+                                                    <div className="text-sm font-medium text-gray-900 truncate" title={tx.description}>{tx.description}</div>
+                                                    {tx.category && tx.category !== 'Uncategorized' && (
+                                                        <div className="text-xs text-gray-500 font-medium mt-0.5 truncate bg-gray-100 inline-block px-1.5 py-0.5 rounded" title={tx.category}>
+                                                            {tx.category}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="p-4">
                                                     <select 
