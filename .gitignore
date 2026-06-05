@@ -34,3 +34,5 @@ Environment variables (NEVER COMMIT THIS FILE)
 .env.development.local
 .env.test.local
 .env.production.local
+dist
+node_modules
