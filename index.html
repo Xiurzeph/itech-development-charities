@@ -1,10 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ITech Financial Ledger</title>
+
+    <!-- CSV Parser for Bank Imports -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- FIREBASE COMPATIBILITY SCRIPTS -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <!-- Vite Environment Variable Bridge -->
+    <script type="module">
+        // Safely check if we are in a Vite environment where import.meta.env is defined
+        const viteEnv = (import.meta && import.meta.env) ? import.meta.env : {};
+        
+        window.env = {
+            VITE_AZURE_TENANT_ID: viteEnv.VITE_AZURE_TENANT_ID || '',
+            VITE_FIREBASE_API_KEY: viteEnv.VITE_FIREBASE_API_KEY || '',
+            VITE_FIREBASE_APP_ID: viteEnv.VITE_FIREBASE_APP_ID || '',
+            VITE_FIREBASE_AUTH_DOMAIN: viteEnv.VITE_FIREBASE_AUTH_DOMAIN || '',
+            VITE_FIREBASE_MESSAGING_SENDER_ID: viteEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+            VITE_FIREBASE_PROJECT_ID: viteEnv.VITE_FIREBASE_PROJECT_ID || '',
+            VITE_FIREBASE_STORAGE_BUCKET: viteEnv.VITE_FIREBASE_STORAGE_BUCKET || '',
+            VITE_GEMINI_API_KEY: viteEnv.VITE_GEMINI_API_KEY || ''
+        };
+    </script>
 </head>
 <body>
     <div id="root"></div>
