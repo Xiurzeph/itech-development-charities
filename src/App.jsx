@@ -359,11 +359,8 @@ export default function App() {
         const printWindow = window.open('', '', 'width=800,height=600');
         const date = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         
-        // --- NEW: Filter by year ---
-        const reportTransactions = transactions.filter(tx => {
-            if (filterYear === 'All') return true;
-            return tx.date ? new Date(tx.date).getFullYear().toString() === filterYear : false;
-        });
+        // Use the exact transactions currently visible on screen (respects Statement Dates!)
+        const reportTransactions = visibleTransactions;
 
         const totalDonations = reportTransactions.filter(tx => tx.amount > 0 && tx.reconciled).reduce((sum, tx) => sum + tx.amount, 0);
         const totalExpenses = reportTransactions.filter(tx => tx.amount < 0 && tx.reconciled).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
@@ -382,6 +379,12 @@ export default function App() {
         const generalTransactions = reportTransactions.filter(tx => !tx.projectId && tx.reconciled);
         const generalDonations = generalTransactions.filter(tx => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0);
         const generalExpenses = generalTransactions.filter(tx => tx.amount < 0).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+        
+        // Determine the smartest title for the report
+        let reportTitle = filterYear === 'All' ? 'All Time' : filterYear;
+        if (isReconMode && statementEndDate) {
+            reportTitle = `Ending ${statementEndDate}`;
+        }
         
         const html = `
         <html>
@@ -412,7 +415,7 @@ export default function App() {
             <div class="header-container">
                 <img src="./idc-logo.png" alt="ITech Charities Logo" class="logo" onerror="this.src='https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'">
                 <div class="report-title">
-                    <h1>Financial Report (${filterYear === 'All' ? 'All Time' : filterYear})</h1>
+                    <h1>Financial Report (${reportTitle})</h1>
                     <div class="meta">Generated: ${new Date().toLocaleDateString()}</div>
                 </div>
             </div>
