@@ -327,6 +327,20 @@ export default function App() {
         setModalConfig({ isOpen: true, type: 'editTransaction', data: null });
     };
 
+    // --- ADD TRANSACTION LOGIC ---
+    const handleAddTransaction = () => {
+        const today = new Date().toISOString().split('T')[0];
+        setEditTxData({
+            id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15), 
+            date: today,
+            description: '',
+            amount: '',
+            category: 'Manual Entry',
+            projectId: ''
+        });
+        setModalConfig({ isOpen: true, type: 'addTransaction', data: null });
+    };
+
     const handlePrintReport = () => {
         const printWindow = window.open('', '', 'width=800,height=600');
         const date = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -793,6 +807,24 @@ export default function App() {
                  category: editTxData.category.trim() || 'Uncategorized',
                  projectId: editTxData.projectId
              });
+        } else if (type === 'addTransaction') {
+             // Logic for adding a completely new manual transaction row
+             const amt = parseFloat(editTxData.amount);
+             if (isNaN(amt) || amt === 0) return showAlert("Invalid Input", "Please enter a valid non-zero amount.");
+             if (!editTxData.description.trim()) return showAlert("Invalid Input", "Please enter a description.");
+             if (!editTxData.date) return showAlert("Invalid Input", "Please select a date.");
+
+             const updatedDate = new Date(editTxData.date + 'T12:00:00').toISOString();
+
+             await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(editTxData.id).set({
+                 date: updatedDate,
+                 description: editTxData.description.trim(),
+                 amount: amt,
+                 category: editTxData.category.trim() || 'Manual Entry',
+                 projectId: editTxData.projectId,
+                 reconciled: false,
+                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
+             });
         }
         closeModal();
     };
@@ -1018,7 +1050,7 @@ export default function App() {
                                     <Icons.Upload /> <span>Import Bank CSV</span>
                                     <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
                                 </label>
-                                <button onClick={() => showAlert('Coming Soon', 'Manual transaction entry from this screen is coming soon. For now, use the Dashboard to adjust balances manually, or import a CSV.')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2">
+                                <button onClick={handleAddTransaction} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm font-medium text-sm transition-colors flex items-center space-x-2">
                                     <span>Add Transaction</span> <Icons.Plus />
                                 </button>
                             </div>
@@ -1210,7 +1242,7 @@ export default function App() {
                 )}
             </main>
 
-            <Modal isOpen={modalConfig.isOpen} onClose={closeModal} title={modalConfig.type === 'transaction' ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income') : modalConfig.type === 'addProject' ? 'Create New Fund' : modalConfig.type === 'editProject' ? 'Edit Fund' : modalConfig.type === 'editTransaction' ? 'Edit Transaction' : 'Update Total Cash'}>
+            <Modal isOpen={modalConfig.isOpen} onClose={closeModal} title={modalConfig.type === 'transaction' ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income') : modalConfig.type === 'addProject' ? 'Create New Fund' : modalConfig.type === 'editProject' ? 'Edit Fund' : modalConfig.type === 'editTransaction' ? 'Edit Transaction' : modalConfig.type === 'addTransaction' ? 'Add Manual Transaction' : 'Update Total Cash'}>
                 <form onSubmit={handleModalSubmit} className="space-y-4">
                     {(modalConfig.type === 'addProject' || modalConfig.type === 'editProject') && (
                         <div>
@@ -1219,7 +1251,7 @@ export default function App() {
                         </div>
                     )}
 
-                    {(modalConfig.type === 'editTransaction') && (
+                    {(modalConfig.type === 'editTransaction' || modalConfig.type === 'addTransaction') && (
                         <div className="space-y-3">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -1255,7 +1287,7 @@ export default function App() {
                         </div>
                     )}
                     
-                    {(modalConfig.type !== 'editTransaction') && (
+                    {(modalConfig.type !== 'editTransaction' && modalConfig.type !== 'addTransaction') && (
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editProject' ? 'Current Balance' : modalConfig.type === 'editTotalCash' ? 'New Bank Balance' : 'Amount'}
