@@ -425,7 +425,7 @@
                 </head>
                 <body>
                 <div class="header-container">
-                    <img src="idc-logo.png" alt="ITech Charities Logo" class="logo" onerror="this.src='https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'">
+                    <img src="./idc-logo.png" alt="ITech Charities Logo" class="logo" onerror="this.src='https://itechcharities.org/wp-content/uploads/2023/06/idc-logo.png'">
                     <div class="report-title">
                         <h1>Monthly Financial Report</h1>
                         <div class="meta">Generated: ${new Date().toLocaleDateString()}</div>
@@ -539,6 +539,17 @@
 
                 setIsCategorizing(true);
                 try {
+                    // SECURE LOCAL STORAGE KEY HANDLING (Bypasses the need for Vite/.env)
+                    let apiKey = localStorage.getItem('ITECH_GEMINI_KEY');
+                    if (!apiKey) {
+                        apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
+                        if (!apiKey) {
+                            setIsCategorizing(false);
+                            return; // User cancelled
+                        }
+                        localStorage.setItem('ITECH_GEMINI_KEY', apiKey.trim());
+                    }
+
                     const availableFunds = projects.map(p => ({ id: p.id, name: p.name, type: p.type }));
                     const pendingTx = uncategorized.map(tx => ({ id: tx.id, description: tx.description, amount: tx.amount }));
 
@@ -568,14 +579,22 @@
                         }
                     };
 
-                    const apiKey = ""; // Automatically injected by the canvas environment
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
                     
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
+
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        if (response.status === 400 || response.status === 403) {
+                            localStorage.removeItem('ITECH_GEMINI_KEY'); // Clear bad key
+                            throw new Error("Invalid API Key. Please try again.");
+                        }
+                        throw new Error(errData.error?.message || "API Request Failed");
+                    }
 
                     const result = await response.json();
                     
@@ -607,7 +626,7 @@
                     }
                 } catch (error) {
                     console.error("Categorization Error:", error);
-                    showAlert("AI Error", "The AI categorization service is currently unavailable or encountered an error. Please try again.");
+                    showAlert("AI Error", error.message || "The AI categorization service encountered an error.");
                 } finally {
                     setIsCategorizing(false);
                 }
