@@ -526,11 +526,9 @@
             `;
             printWindow.document.write(html);
             printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => { printWindow.print(); }, 250);
-        };
+        }; // <-- Added the missing closing bracket for handlePrintReport
 
-        const handleAutoCategorize = async () => {
+            const handleAutoCategorize = async () => {
                 const uncategorized = visibleTransactions.filter(tx => !tx.projectId && !tx.applied);
                 if (uncategorized.length === 0) {
                     showAlert("All Caught Up", "There are no uncategorized transactions to process.");
@@ -539,8 +537,13 @@
 
                 setIsCategorizing(true);
                 try {
-                    // SECURE LOCAL STORAGE KEY HANDLING (Bypasses the need for Vite/.env)
-                    let apiKey = localStorage.getItem('ITECH_GEMINI_KEY');
+                    // 1. Try to grab the key from Vite Environment (.env or GitHub Secrets)
+                    let envKey = null;
+                    try { envKey = import.meta.env.VITE_GEMINI_API_KEY; } catch(e) {}
+                    
+                    // 2. Fallback to Local Storage only if the .env key is missing
+                    let apiKey = envKey || window?.env?.VITE_GEMINI_API_KEY || localStorage.getItem('ITECH_GEMINI_KEY');
+
                     if (!apiKey) {
                         apiKey = window.prompt("Please paste your Gemini API Key to enable AI Categorization.\n\nIt will be securely saved in your browser's local storage so you don't have to enter it again.");
                         if (!apiKey) {
@@ -579,7 +582,8 @@
                         }
                     };
 
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+                    // Updated model endpoint to 1.5-pro to fix the 404 error
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
                     
                     const response = await fetch(apiUrl, {
                         method: 'POST',
