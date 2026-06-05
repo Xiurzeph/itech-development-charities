@@ -126,10 +126,14 @@ export default function App() {
     const [inputName, setInputName] = useState('');
     const [inputTarget, setInputTarget] = useState('');
 
+    // Row Edit State
+    const [editTxData, setEditTxData] = useState({ id: '', date: '', description: '', amount: '', category: '', projectId: '' });
+
     // Reconciliation States
     const [isReconMode, setIsReconMode] = useState(false);
     const [startingBalance, setStartingBalance] = useState('');
     const [statementBalance, setStatementBalance] = useState('');
+    const [statementStartDate, setStatementStartDate] = useState('');
     const [statementEndDate, setStatementEndDate] = useState('');
     const [isCategorizing, setIsCategorizing] = useState(false);
     const [filterYear, setFilterYear] = useState('All');
@@ -300,6 +304,27 @@ export default function App() {
         }
         
         showAlert("Success", "Ledger has been cleared successfully.");
+    };
+
+    const openEditTransactionModal = (tx) => {
+        // Enforce safety protocol: Un-reconcile before editing
+        if (tx.reconciled) {
+            showAlert("Transaction Locked", "Please un-reconcile this transaction (uncheck the green circle) before editing it. This ensures your fund balances stay perfectly accurate.");
+            return;
+        }
+
+        const d = new Date(tx.date);
+        const dateString = isNaN(d) ? '' : d.toISOString().split('T')[0];
+        
+        setEditTxData({
+            id: tx.id,
+            date: dateString,
+            description: tx.description || '',
+            amount: tx.amount ? tx.amount.toString() : '',
+            category: tx.category || 'Uncategorized',
+            projectId: tx.projectId || ''
+        });
+        setModalConfig({ isOpen: true, type: 'editTransaction', data: null });
     };
 
     const handlePrintReport = () => {
@@ -713,6 +738,7 @@ export default function App() {
     const closeModal = () => {
         setModalConfig({ ...modalConfig, isOpen: false });
         setInputValue(''); setInputName(''); setInputTarget('');
+        setEditTxData({ id: '', date: '', description: '', amount: '', category: '', projectId: '' });
     };
 
     const handleModalSubmit = async (e) => {
@@ -749,6 +775,24 @@ export default function App() {
              const amount = parseFloat(inputValue);
              if (isNaN(amount) || amount < 0) return showAlert("Invalid Input", "Please enter a valid non-negative amount.");
              await dbUpdateTotalCash(amount);
+        } else if (type === 'editTransaction') {
+             const amt = parseFloat(editTxData.amount);
+             if (isNaN(amt) || amt === 0) return showAlert("Invalid Input", "Please enter a valid non-zero amount.");
+             if (!editTxData.description.trim()) return showAlert("Invalid Input", "Please enter a description.");
+             if (!editTxData.date) return showAlert("Invalid Input", "Please select a date.");
+
+             const txRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('transactions').doc(editTxData.id);
+             
+             // appending T12:00:00 protects the date from timezone shifting across midnight
+             const updatedDate = new Date(editTxData.date + 'T12:00:00').toISOString();
+
+             await txRef.update({
+                 date: updatedDate,
+                 description: editTxData.description.trim(),
+                 amount: amt,
+                 category: editTxData.category.trim() || 'Uncategorized',
+                 projectId: editTxData.projectId
+             });
         }
         closeModal();
     };
@@ -777,12 +821,20 @@ export default function App() {
             }
 
             // Apply Reconciliation Filter
-            if (!isReconMode || !statementEndDate) return true;
-            const txDate = new Date(tx.date);
-            const endDate = new Date(statementEndDate + 'T23:59:59'); 
-            return txDate <= endDate;
+            if (isReconMode) {
+                const txDate = new Date(tx.date);
+                if (statementStartDate) {
+                    const startDate = new Date(statementStartDate + 'T00:00:00');
+                    if (txDate < startDate) return false;
+                }
+                if (statementEndDate) {
+                    const endDate = new Date(statementEndDate + 'T23:59:59'); 
+                    if (txDate > endDate) return false;
+                }
+            }
+            return true;
         });
-    }, [transactions, isReconMode, statementEndDate, filterYear]);
+    }, [transactions, isReconMode, statementStartDate, statementEndDate, filterYear]);
 
     const reconciledSum = visibleTransactions
         .filter(tx => tx.reconciled)
@@ -1031,6 +1083,15 @@ export default function App() {
                                         </div>
                                     </div>
                                     <div className="flex-1 w-full">
+                                        <p className="text-sm text-blue-800 font-medium mb-1">Statement Start Date</p>
+                                        <input 
+                                            type="date" 
+                                            value={statementStartDate} 
+                                            onChange={(e) => setStatementStartDate(e.target.value)}
+                                            className="px-3 py-2 w-full text-sm focus:outline-none focus:ring-0 text-blue-900 font-semibold border border-blue-200 rounded shadow-sm bg-white" 
+                                        />
+                                    </div>
+                                    <div className="flex-1 w-full">
                                         <p className="text-sm text-blue-800 font-medium mb-1">Statement End Date</p>
                                         <input 
                                             type="date" 
@@ -1047,7 +1108,7 @@ export default function App() {
                                                 type="number" 
                                                 value={statementBalance} 
                                                 onChange={(e) => setStatementBalance(e.target.value)}
-                                                        className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
+                                                className="px-3 py-2 text-sm w-full focus:outline-none focus:ring-0 text-blue-900 font-semibold" 
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -1058,7 +1119,7 @@ export default function App() {
                                     </div>
                                     <div className="flex-1 w-full text-right">
                                         <p className="text-sm text-blue-800 font-medium mb-1">Difference</p>
-                                        <div className={`flex items-center justify-end text-2xl font-bold ${reconDifference === 0 && statementBalance !== '' ? 'text-green-600' : 'text-gray-900'}`}>
+                                        <div className={`flex items-center justify-end text-2xl font-bold ${reconDifference === 0 && statementBalance !== '' ? 'text-green-600' : (statementBalance !== '' ? 'text-red-600' : 'text-gray-900')}`}>
                                             <span>${Math.abs(reconDifference).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                             {reconDifference === 0 && statementBalance !== '' && <span className="ml-2 bg-green-100 text-green-600 rounded-full p-1"><Icons.Check /></span>}
                                         </div>
@@ -1075,7 +1136,7 @@ export default function App() {
                                             <th className="p-4 w-48">Fund Tracking</th>
                                             <th className="p-4 w-32 text-right">Amount</th>
                                             <th className="p-4 w-24 text-center">Reconciled</th>
-                                            <th className="p-4 w-16 text-center"></th>
+                                            <th className="p-4 w-24 text-center"></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -1130,9 +1191,14 @@ export default function App() {
                                                     </button>
                                                 </td>
                                                 <td className="p-4 text-center">
-                                                    <button onClick={() => showConfirm('Delete Transaction', 'Are you sure you want to remove this transaction from the ledger?', () => deleteTransaction(tx.id))} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-gray-100">
-                                                        <Icons.Trash2 />
-                                                    </button>
+                                                    <div className="flex justify-center space-x-1">
+                                                        <button onClick={() => openEditTransactionModal(tx)} className="text-gray-400 hover:text-blue-500 transition-colors p-1.5 rounded-lg hover:bg-gray-100" title="Edit Transaction">
+                                                            <Icons.Pencil />
+                                                        </button>
+                                                        <button onClick={() => showConfirm('Delete Transaction', 'Are you sure you want to remove this transaction from the ledger?', () => deleteTransaction(tx.id))} className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-gray-100" title="Delete Transaction">
+                                                            <Icons.Trash2 />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1144,7 +1210,7 @@ export default function App() {
                 )}
             </main>
 
-            <Modal isOpen={modalConfig.isOpen} onClose={closeModal} title={modalConfig.type === 'transaction' ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income') : modalConfig.type === 'addProject' ? 'Create New Fund' : modalConfig.type === 'editProject' ? 'Edit Fund' : 'Update Total Cash'}>
+            <Modal isOpen={modalConfig.isOpen} onClose={closeModal} title={modalConfig.type === 'transaction' ? (modalConfig.data?.transactionType === 'add' ? 'Add Donation' : modalConfig.data?.transactionType === 'spend' ? 'Log Expense' : 'Add General Income') : modalConfig.type === 'addProject' ? 'Create New Fund' : modalConfig.type === 'editProject' ? 'Edit Fund' : modalConfig.type === 'editTransaction' ? 'Edit Transaction' : 'Update Total Cash'}>
                 <form onSubmit={handleModalSubmit} className="space-y-4">
                     {(modalConfig.type === 'addProject' || modalConfig.type === 'editProject') && (
                         <div>
@@ -1152,16 +1218,54 @@ export default function App() {
                             <input type="text" autoFocus value={inputName} onChange={(e) => setInputName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g., Youth Scholarship" />
                         </div>
                     )}
-                    
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editProject' ? 'Current Balance' : modalConfig.type === 'editTotalCash' ? 'New Bank Balance' : 'Amount'}
-                        </label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">$</span></div>
-                            <input type="number" step="0.01" autoFocus={modalConfig.type === 'transaction' || modalConfig.type === 'editTotalCash'} value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full pl-7 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="0.00" />
+
+                    {(modalConfig.type === 'editTransaction') && (
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                <input type="date" value={editTxData.date} onChange={(e) => setEditTxData({...editTxData, date: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <input type="text" value={editTxData.description} onChange={(e) => setEditTxData({...editTxData, description: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">$</span></div>
+                                    <input type="number" step="0.01" value={editTxData.amount} onChange={(e) => setEditTxData({...editTxData, amount: e.target.value})} className="w-full pl-7 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Category</label>
+                                <input type="text" value={editTxData.category} onChange={(e) => setEditTxData({...editTxData, category: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Restricted Fund Tracking</label>
+                                <select value={editTxData.projectId} onChange={(e) => setEditTxData({...editTxData, projectId: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Uncategorized</option>
+                                    <optgroup label="Restricted Funds">
+                                        {specialProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </optgroup>
+                                    <optgroup label="General Categories">
+                                        {generalProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </optgroup>
+                                </select>
+                            </div>
                         </div>
-                    </div>
+                    )}
+                    
+                    {(modalConfig.type !== 'editTransaction') && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                {modalConfig.type === 'addProject' ? 'Initial Balance' : modalConfig.type === 'editProject' ? 'Current Balance' : modalConfig.type === 'editTotalCash' ? 'New Bank Balance' : 'Amount'}
+                            </label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">$</span></div>
+                                <input type="number" step="0.01" autoFocus={modalConfig.type === 'transaction' || modalConfig.type === 'editTotalCash'} value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full pl-7 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="0.00" />
+                            </div>
+                        </div>
+                    )}
 
                     {(modalConfig.type === 'addProject' || modalConfig.type === 'editProject') && (
                         <div>
