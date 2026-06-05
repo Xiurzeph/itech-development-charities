@@ -1,6 +1,13 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vite';
 
 export default defineConfig({
-  // REPLACE this with your actual repository name
-  base: '/itech-development-charities/', 
-})
+  // This is CRITICAL for GitHub Pages
+  base: '/itech-development-charities/',
+  build: {
+    outDir: 'dist',
+    // Ensures assets are handled correctly
+    rollupOptions: {
+      input: './index.html'
+    }
+  }
+});
