@@ -132,6 +132,7 @@ export default function App() {
     const [statementBalance, setStatementBalance] = useState('');
     const [statementEndDate, setStatementEndDate] = useState('');
     const [isCategorizing, setIsCategorizing] = useState(false);
+    const [filterYear, setFilterYear] = useState('All');
 
     // Helper to replace window.alert / window.confirm
     const showAlert = (title, message) => setMsgBox({ isOpen: true, title, message, isConfirm: false, onConfirm: null });
@@ -480,7 +481,7 @@ export default function App() {
         const promptText = `
             You are an expert financial accountant for a non-profit.
             Categorize the following transactions into one of these specific project IDs:
-            ${data.projects.filter(p => p.id !== 'main').map(p => `- ${p.id} (${p.name})`).join('\n')}
+            ${projects.filter(p => p.id !== 'main').map(p => `- ${p.id} (${p.name})`).join('\n')}
 
             Transactions to categorize:
             ${uncategorized.map(t => `ID: ${t.id} | Date: ${t.date} | Desc: ${t.description} | Amount: ${t.amount} | Type: ${t.type} | Bank Category: ${t.category}`).join('\n')}
@@ -757,14 +758,31 @@ export default function App() {
     const totalAllocated = specialProjects.reduce((sum, p) => sum + (parseFloat(p.balance) || 0), 0);
     const totalUnrestricted = totalCash - totalAllocated;
 
+    // Dynamically generate the list of available years from the transaction data
+    const availableYears = useMemo(() => {
+        const years = transactions.map(t => {
+            if (!t.date) return null;
+            return new Date(t.date).getFullYear().toString();
+        }).filter(Boolean);
+        
+        return ['All', ...new Set(years)].sort((a, b) => b === 'All' ? 1 : a === 'All' ? -1 : b - a);
+    }, [transactions]);
+
     const visibleTransactions = useMemo(() => {
         return transactions.filter(tx => {
+            // Apply Year Filter
+            if (filterYear !== 'All') {
+                const txYear = tx.date ? new Date(tx.date).getFullYear().toString() : null;
+                if (txYear !== filterYear) return false;
+            }
+
+            // Apply Reconciliation Filter
             if (!isReconMode || !statementEndDate) return true;
             const txDate = new Date(tx.date);
             const endDate = new Date(statementEndDate + 'T23:59:59'); 
             return txDate <= endDate;
         });
-    }, [transactions, isReconMode, statementEndDate]);
+    }, [transactions, isReconMode, statementEndDate, filterYear]);
 
     const reconciledSum = visibleTransactions
         .filter(tx => tx.reconciled)
@@ -956,12 +974,29 @@ export default function App() {
 
                         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                             <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0">
-                                <div className="flex items-center space-x-2">
-                                    <Icons.Filter />
-                                    <select className="bg-transparent border-none text-sm font-medium text-gray-700 focus:ring-0 cursor-pointer">
-                                        <option>All Accounts (Bank)</option>
-                                    </select>
+                                
+                                {/* YEAR FILTER AND ACCOUNT SELECTOR */}
+                                <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-2">
+                                        <Icons.Filter />
+                                        <select className="bg-transparent border-none text-sm font-medium text-gray-700 focus:ring-0 cursor-pointer">
+                                            <option>All Accounts (Bank)</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center space-x-2 border-l border-gray-300 pl-4">
+                                        <span className="text-sm font-medium text-gray-500">Year:</span>
+                                        <select 
+                                            value={filterYear} 
+                                            onChange={(e) => setFilterYear(e.target.value)}
+                                            className="bg-white border border-gray-300 text-sm font-medium text-gray-700 rounded-md py-1 px-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                                        >
+                                            {availableYears.map(year => (
+                                                <option key={year} value={year}>{year === 'All' ? 'All Years' : year}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
+
                                 <div className="flex items-center space-x-4">
                                     <div className="flex items-center space-x-3 border-r border-gray-300 pr-4">
                                         <Icons.LayoutDashboard />
@@ -1049,7 +1084,7 @@ export default function App() {
                                                 <td colSpan="6" className="p-12 text-center text-gray-500">
                                                     <div className="flex justify-center mb-3"><Icons.List className="text-gray-300 h-10 w-10" /></div>
                                                     <p>No transactions found.</p>
-                                                    <p className="text-sm mt-1">Import a CSV or change the statement date filter.</p>
+                                                    <p className="text-sm mt-1">Import a CSV or change the statement date/year filter.</p>
                                                 </td>
                                             </tr>
                                         )}
