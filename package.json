@@ -1,6 +1,6 @@
 {
   "name": "itech-development-charities",
-   "type": "module",
+  "type": "module",
   "version": "1.0.0",
   "description": "ITech Development Charities - Fund Tracker",
   "main": "index.js",
@@ -12,9 +12,11 @@
     "nanoid": "^3.3.12",
     "picocolors": "^1.1.1",
     "picomatch": "^4.0.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "rolldown": "^1.0.3",
     "source-map-js": "^1.2.1",
-    "tailwind": "^4.0.0",
+    "tailwind": "^2.3.1",
     "tinyglobby": "^0.2.17"
   },
   "devDependencies": {
